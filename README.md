@@ -233,6 +233,88 @@ continues. Common safe bash commands (`git status`, `ls`, `cd`, `node -v`…) by
 
 ## Architecture
 
+### Overview
+
+```
+            you
+             │
+             ↓
+      ┌─────────────┐
+      │   myagent   │
+      │    CLI      │
+      └──────┬──────┘
+             │
+┌────────────┼────────────┐
+↓            ↓            ↓
+Commands   Model System  Sessions
+   │            │            │
+   │            ↓            │
+   │      Provider Router    │
+   │            │            │
+   │   ┌────────┼────────┐   │
+   │   ↓        ↓        ↓   │
+   │  Groq   Gemini   Mistral│
+   │    │        │        │   │
+   │   └────────┼────────┘   │
+   │            │            │
+   ↓            ↓            ↓
+ File Tools    AI Response  Save/Load
+   │
+┌────┼────┐
+↓    ↓    ↓
+Read Edit Terminal
+```
+
+### How a request flows
+
+```
+you type "fix this bug"
+        │
+        ▼
+src/repl.js            interactive loop, auto-save, /commands, recovery menu
+        │  state.messages += prompt
+        ▼
+src/agent.js  runAgent()
+        │  resolveModel() → pick provider/model          src/models.js
+        │  ensureApiConfig() → this provider's OWN key    src/models.js ↔ sources/providers.js
+        │  buildSystemPrompt(cwd) → OpenAI-compatible call
+        ▼
+       streaming loop  (src/agent.js requestModel)
+        │   402 → shrink max_tokens (4096→256)  ·  429/5xx/timeout/network → bounded backoff
+        ▼
+   model returns tool_calls? ──yes──▶ execute tool with permission check (src/permissions.js)
+        │                               │  allow/ask/deny, bash always/skip, non-TTY auto-deny
+        ▼                               ▼
+   final answer <────── loop with tool results appended (max 30 steps)
+        │
+        ▼
+src/repl.js    on failure: classifyError() → [R]/[M]/[P]/[X] recovery (never crashes)
+```
+
+### Provider isolation (the core idea)
+
+Each provider is a self-contained slot — **key, base URL, capabilities, discovery, cache, and
+error policy travel together** and never leak across slots:
+
+```
+provider slot = { envKeys, baseURL, capabilities, discovery?, modelFilter }
+                    │
+    ┌───────────────┼──────────────────────────────┐
+    ▼               ▼                              ▼
+resolveKey()   discoverModels()                classifyError()
+only ITS keys    GET /models (8s abort)        + provider-aware hints
+per slot        filter + 24h cache             (OpenRouter credit hint only for openrouter)
+```
+
+- `ensureApiConfig()` throws *"No API key for provider X. Add X to your .env"* — it **never
+  borrows** another provider's key.
+- Discovery cache lives outside the repo at `~/.myagent/providers/<id>.json`, so it's never
+  committed and survives across runs.
+- A failure is always reported **with the failing provider's context**; retries never switch
+  providers behind your back.
+
+### File layout
+
 ```
 index.js           CLI entry — commander flags, one-shot, REPL bootstrap, balance alert
 src/repl.js        interactive REPL, numbered menus, /model-category picker, recovery

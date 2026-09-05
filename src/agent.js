@@ -44,32 +44,29 @@ async function createClientForModel(model) {
   return new OpenAI({ apiKey, baseURL, defaultHeaders, timeout: 180000, maxRetries: 1 });
 }
 
-async function runAgent({ model: modelRef, messages, config, cwd, onText, verbose }) {
-  const model = typeof modelRef === "string" ? resolveModel(config, modelRef) : modelRef;
-  const client = await createClientForModel(model);
-  const permissions = config.permissions || {};
-  const permissionChecker = makePermissionChecker(permissions);
-  const hasWeb = permissions.webfetch !== "deny";
-  const maxSteps = config.agent?.maxSteps || 30;
+function isOutputBudgetError(err) {
+  const msg = err?.error?.message || err?.message || String(err);
+  const status = typeof err?.status === "number" ? err.status : null;
+  return status === 402 || /more credits|fewer max_tokens|can only afford|insufficient.*balance/i.test(msg);
+}
 
-  const systemPrompt = buildSystemPrompt(cwd, config.agent?.systemPrompt);
-  const history = [
-    { role: "system", content: systemPrompt },
-    ...messages
-  ];
-
-  let steps = 0;
-  while (steps < maxSteps) {
-    steps++;
+// Ask the model once, streaming, and accumulate the full turn. If the provider
+// refuses because the account balance can't cover the requested max_tokens (402),
+// shrink max_tokens and retry up to a small floor so small tasks still succeed
+// instead of failing outright.
+async function requestModel(client, modelId, messages, hasWeb, modelOptions, maxTokensParam, onText) {
+  const MIN_TOKENS = 256;
+  let maxTokens = maxTokensParam;
+  for (let attempt = 0; attempt < 8; attempt++) {
     try {
       const response = await client.chat.completions.create({
-        model: getApiModelId(model),
-        messages: history,
+        model: modelId,
+        messages,
         tools: toOpenAITools(hasWeb),
         tool_choice: "auto",
         stream: true,
-        max_tokens: config.agent?.maxTokens ?? 4096,
-        ...(model.options || {})
+        max_tokens: maxTokens,
+        ...(modelOptions || {})
       });
 
       const toolAcc = [];
@@ -95,6 +92,47 @@ async function runAgent({ model: modelRef, messages, config, cwd, onText, verbos
           }
         }
       }
+      return { toolAcc, content, finished };
+    } catch (err) {
+      if (isOutputBudgetError(err) && maxTokens > MIN_TOKENS) {
+        maxTokens = Math.max(MIN_TOKENS, Math.floor(maxTokens / 2));
+        if (onText)
+          onText(`\n⤷ small balance — retrying with fewer output tokens (${maxTokens})…\n`);
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw new Error(`Provider refused ${maxTokensParam} output tokens and ${maxTokens} was still too high (balance too low).`);
+}
+
+async function runAgent({ model: modelRef, messages, config, cwd, onText, verbose }) {
+    const model = typeof modelRef === "string" ? resolveModel(config, modelRef) : modelRef;
+  const client = await createClientForModel(model);
+  const permissions = config.permissions || {};
+  const permissionChecker = makePermissionChecker(permissions);
+  const hasWeb = permissions.webfetch !== "deny";
+  const maxSteps = config.agent?.maxSteps || 30;
+
+  const systemPrompt = buildSystemPrompt(cwd, config.agent?.systemPrompt);
+  const history = [
+    { role: "system", content: systemPrompt },
+    ...messages
+  ];
+
+  let steps = 0;
+  while (steps < maxSteps) {
+    steps++;
+    try {
+      const { toolAcc, content } = await requestModel(
+        client,
+        getApiModelId(model),
+        history,
+        hasWeb,
+        model.options,
+        config.agent?.maxTokens ?? 4096,
+        onText
+      );
 
       history.push({
         role: "assistant",

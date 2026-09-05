@@ -1,5 +1,5 @@
 # myagent — .gitignore
-# Last updated: 2026-09-05 (provider-isolation build v1.1)
+# Last updated: 2026-09-05 (docs removed from repo — README is the single source)
 
 # Dependencies
 node_modules/
@@ -15,7 +15,9 @@ node_modules/
 .myagent/
 last-balance-alert.json
 
-# Test artifacts
+# Docs & test artifacts — kept local only
+docs/
+result.txt
 tools/*.json
 model-test-*.json
 docs/*.journal.md

@@ -10,6 +10,135 @@ const { classifyError } = require("./errors");
 const crypto = require("crypto");
 const ui = require("./ui");
 
+// Job-based model guidance: pick a job, see the best models for it, then switch.
+const JOB_CATEGORIES = [
+  {
+    key: "allrounder",
+    tag: "ALL-ROUNDER",
+    desc: "everyday chat, Q&A, mixed tasks",
+    cats: ["general"],
+    best: "openrouter/openai/gpt-6-astra",
+    models: [
+      "openrouter/openai/gpt-6-astra",
+      "openrouter/anthropic/claude-sonnet-5",
+      "openrouter/openai/gpt-4o",
+      "groq/openai/gpt-oss-20b",
+      "google/gemini-3.6-flash"
+    ]
+  },
+  {
+    key: "coding",
+    tag: "CODING",
+    desc: "code gen, debugging, refactoring",
+    cats: ["coding"],
+    best: "openrouter/openai/gpt-5.1-codex",
+    models: [
+      "openrouter/openai/gpt-5.1-codex",
+      "mistral/codestral-latest",
+      "openrouter/deepseek/deepseek-v4-pro",
+      "openrouter/qwen/qwen3-coder",
+      "groq/openai/gpt-oss-120b",
+      "openrouter/microsoft/phi-4"
+    ]
+  },
+  {
+    key: "uiux",
+    tag: "UI/UX",
+    desc: "frontend, HTML/CSS, design, copy",
+    cats: ["general", "fast"],
+    best: "openrouter/deepseek/deepseek-v4-pro",
+    models: [
+      "openrouter/deepseek/deepseek-v4-pro",
+      "google/gemini-3.7-flash",
+      "openrouter/openai/gpt-4o",
+      "zai/glm-5.3"
+    ]
+  },
+  {
+    key: "reasoning",
+    tag: "REASONING / RESEARCH",
+    desc: "math, logic, long multi-step analysis",
+    cats: ["reasoning"],
+    best: "openrouter/anthropic/claude-opus-5",
+    models: [
+      "openrouter/anthropic/claude-opus-5",
+      "openrouter/openai/gpt-6-astra",
+      "openrouter/openai/gpt-5.6-sol",
+      "openrouter/openai/gpt-5.6-terra",
+      "openrouter/deepseek/deepseek-v4-pro",
+      "groq/openai/gpt-oss-120b",
+      "mistral/mistral-medium-2604"
+    ]
+  },
+  {
+    key: "planning",
+    tag: "PLANNING / ARCHITECTURE",
+    desc: "design decisions, project structure, step-by-step plans",
+    cats: ["reasoning", "general"],
+    best: "openrouter/openai/gpt-6-astra",
+    models: [
+      "openrouter/openai/gpt-6-astra",
+      "openrouter/anthropic/claude-opus-5",
+      "openrouter/openai/gpt-5.6-terra",
+      "openrouter/deepseek/deepseek-v4-pro"
+    ]
+  },
+  {
+    key: "docs",
+    tag: "DOCUMENTATION",
+    desc: "explain code, write docs/README, summarize",
+    cats: ["general", "coding"],
+    best: "openrouter/anthropic/claude-fable-5.1",
+    models: [
+      "openrouter/anthropic/claude-fable-5.1",
+      "openrouter/openai/gpt-4o",
+      "openrouter/anthropic/claude-sonnet-5",
+      "openrouter/nvidia/nemotron-3-super-120b-a12b:free"
+    ]
+  },
+  {
+    key: "review",
+    tag: "REVIEW",
+    desc: "critique code, find bugs, security checks",
+    cats: ["reasoning", "coding"],
+    best: "openrouter/anthropic/claude-opus-5",
+    models: [
+      "openrouter/anthropic/claude-opus-5",
+      "openrouter/openai/gpt-6-astra",
+      "openrouter/openai/gpt-5.6-sol",
+      "groq/openai/gpt-oss-120b"
+    ]
+  },
+  {
+    key: "speed",
+    tag: "SPEED",
+    desc: "quick replies, high volume, low latency",
+    cats: ["fast"],
+    best: "google/gemini-3.6-flash",
+    models: [
+      "google/gemini-3.6-flash",
+      "zai/glm-5.3-flash",
+      "openrouter/openai/gpt-4o-mini",
+      "groq/openai/gpt-oss-20b"
+    ]
+  },
+  {
+    key: "free",
+    tag: "FREE ($0)",
+    desc: "every token counts — no budget",
+    cats: ["free"],
+    best: "openrouter/nvidia/nemotron-3-super-120b-a12b:free",
+    models: [
+      "openrouter/nvidia/nemotron-3-super-120b-a12b:free",
+      "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free",
+      "openrouter/cohere/north-mini-code:free",
+      "groq/openai/gpt-oss-20b",
+      "mistral/codestral-latest",
+      "google/gemini-3.6-flash"
+    ]
+  }
+];
+
 const BANNER = ui.green(`
    ███╗   ███╗██╗   ██╗ █████╗  ██████╗ ███████╗███╗   ██╗████████╗
    ████╗ ████║╚██╗ ██╔╝██╔══██╗██╔════╝ ██╔════╝████╗  ██║╚══██╔══╝
@@ -68,6 +197,8 @@ function printHelp() {
   ui.log(ui.dim("    /provider           pick a provider, then a model from it"));
   ui.log(ui.dim("    /provider <id>      open that provider's model picker, e.g. /provider groq"));
   ui.log(ui.dim("    /providers          show provider config status (✓ configured / ✗ missing)"));
+  ui.log(ui.dim("    /model-category     best models by job (all-rounder, coding, UI/UX, research, docs...)"));
+  ui.log(ui.dim("    /model-category <t> jump to a job, e.g. /model-category coding or /model category"));
   ui.log(ui.dim("    /permissions        show/edit tool permissions"));
   ui.log(ui.dim("    /config             open the config file (creates defaults first)"));
   ui.log(ui.dim("    /clear              clear conversation history"));
@@ -79,6 +210,115 @@ function printHelp() {
   ui.log(ui.dim("    /exit, /quit, Ctrl+C  exit"));
   ui.log(ui.dim(""));
   ui.log(ui.dim("  Tip: end a line with \\ to continue on the next line (multiline prompts)."));
+}
+
+function resolveJobModels(config, job) {
+  const models = [];
+  const seen = new Set();
+  for (const id of job.models) {
+    const found = getModelById(config, id) || resolveModel(config, id);
+    if (found) {
+      models.push(found);
+      seen.add(found.id.toLowerCase());
+    }
+  }
+  const all = listModels(config);
+  for (const m of all) {
+    if (seen.has(m.id.toLowerCase())) continue;
+    if (job.cats && job.cats.length && job.cats.includes(m.category)) {
+      models.push(m);
+      seen.add(m.id.toLowerCase());
+    }
+  }
+  return models;
+}
+
+// Numbered job list -> returns a JOB or null (cancel).
+function jobMenu(rl) {
+  return new Promise((resolve) => {
+    ui.log("");
+    ui.log(ui.cyan(ui.bold("  Pick a job — number, job name, or 0 = cancel")));
+    JOB_CATEGORIES.forEach((j, i) => {
+      ui.log(`    ${String(i + 1).padStart(2)}. ${ui.cyan(j.tag.padEnd(22))} — ${j.desc}`);
+    });
+    ui.log("");
+    rl.question(ui.dim("  Pick a job > "), (line) => {
+      const answer = line.trim();
+      if (!answer || answer === "0") return resolve(null);
+      const asNum = parseInt(answer, 10);
+      if (!isNaN(asNum) && asNum >= 1 && asNum <= JOB_CATEGORIES.length) return resolve(JOB_CATEGORIES[asNum - 1]);
+      const byKey = JOB_CATEGORIES.find((j) => j.key.includes(answer.toLowerCase()));
+      if (byKey) return resolve(byKey);
+      const byTag = JOB_CATEGORIES.find((j) => j.tag.toLowerCase().includes(answer.toLowerCase()));
+      if (byTag) return resolve(byTag);
+      ui.log(ui.red(`  No job matched "${answer}". Try: ${JOB_CATEGORIES.map((j) => j.key).join(", ")}`));
+      resolve(null);
+    });
+  });
+}
+
+// Category-based flow: show best models for a job, then let the user switch (number or id).
+async function modelCategoryFlow(rl, config, state, argText) {
+  const t = String(argText || "").trim().toLowerCase();
+  let job = null;
+  if (t) {
+    job = JOB_CATEGORIES.find(
+      (j) => j.key.includes(t) || j.tag.toLowerCase().includes(t) || j.desc.toLowerCase().includes(t)
+    );
+    if (!job) {
+      ui.log(ui.red(`  No job matched "${argText}". Try: ${JOB_CATEGORIES.map((j) => j.key).join(", ")}`));
+      return true;
+    }
+  } else {
+    job = await jobMenu(rl);
+    if (!job) return true;
+  }
+
+  const list = resolveJobModels(config, job);
+  if (list.length === 0) {
+    ui.log(ui.red(`  No models resolved for "${job.tag}". Check the catalog.`));
+    return true;
+  }
+
+  ui.log("");
+  ui.log(ui.cyan(ui.bold(`  ${job.tag} — ${job.desc}`)));
+  ui.log(ui.dim("  Best pick: ") + ui.green(job.best));
+  const best = job.best.toLowerCase();
+  const flat = [];
+  for (const m of list) {
+    const idx = flat.length;
+    flat.push(m);
+    const freeTag = m.category === "free" || /:free$/.test(m.model) ? ui.green(" [free]") : "";
+    const bestTag = m.id.toLowerCase() === best ? ui.yellow("  ★ best") : "";
+    const curTag = m.id === state.model?.id ? ui.dim("  ◀ current") : "";
+    ui.log(`    ${String(idx + 1).padStart(2)}. ${ui.cyan(m.name)}${freeTag}  ${ui.gray(m.id)}${bestTag}${curTag}`);
+  }
+  ui.log("");
+  ui.log(ui.dim("  Want to switch? enter a number or model id (0 = no, keep current)"));
+  const picked = await new Promise((resolve) => {
+    rl.question(ui.dim("  Switch to > "), (line) => {
+      const answer = line.trim();
+      if (!answer || answer === "0") return resolve(null);
+      const asNum = parseInt(answer, 10);
+      if (!isNaN(asNum) && asNum >= 1 && asNum <= flat.length) return resolve(flat[asNum - 1]);
+      const low = answer.toLowerCase();
+      const exact = flat.find((m) => m.id.toLowerCase() === low || (m.name || "").toLowerCase() === low);
+      if (exact) return resolve(exact);
+      const partial = findMatchingModels(flat, low);
+      if (partial.length === 1) return resolve(partial[0]);
+      const raw = resolveModel(config, answer);
+      if (raw) return resolve(raw);
+      ui.log(ui.red(`  No model matched "${answer}". Keeping current.`));
+      resolve(null);
+    });
+  });
+  if (!picked) {
+    ui.log(ui.dim("  OK, keeping your current model."));
+    return true;
+  }
+  state.model = picked;
+  ui.log(ui.green(`  → Model set to ${picked.id}`));
+  return true;
 }
 
 // Case-insensitive substring match across id, name, and raw model id.
@@ -264,6 +504,10 @@ async function handleCommand(rl, line, state) {
       }
     case "model":
       {
+        if (/^category/i.test(arg)) {
+          const rest2 = arg.replace(/^category\s*/i, "").trim();
+          return await modelCategoryFlow(rl, config, state, rest2);
+        }
         if (!arg) {
           // Provider-first flow: pick provider, then a model from that provider only.
           ui.log("");
@@ -317,6 +561,10 @@ async function handleCommand(rl, line, state) {
         ui.log(ui.red(`  Unknown model: ${arg}. Try /model <partial name> (e.g. /model gemma) or /model to browse providers.`));
       }
       return true;
+    case "model-category":
+      {
+        return await modelCategoryFlow(rl, config, state, arg);
+      }
     case "permissions":
       showPermissions(config);
       return true;
@@ -421,7 +669,7 @@ async function repl({ initialModel, cwd, verbose, noBanner }) {
     terminal: true,
     completer: (line) => {
       // Tab-complete /model and /models with catalog ids and provider prefixes.
-      const m = line.match(/^\/(models?|providers?)\s+(\S*)$/i);
+      const m = line.match(/^\/(models?|providers?|model-category)\s+(\S*)$/i);
       if (!m) return [[], line];
       const cmdLower = m[1].toLowerCase();
       const prefix = m[2].toLowerCase();
@@ -625,4 +873,4 @@ function autoSave(state) {
   saveSession(s.id, s);
 }
 
-module.exports = { repl, listSessions, loadSession, saveSession, newSessionId, BANNER, modelMenu, findMatchingModels, providerMenu, modelMenuForProvider, errorRecoveryMenu };
+module.exports = { repl, listSessions, loadSession, saveSession, newSessionId, BANNER, modelMenu, findMatchingModels, providerMenu, modelMenuForProvider, errorRecoveryMenu, modelCategoryFlow, jobMenu, JOB_CATEGORIES };

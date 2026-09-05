@@ -17,7 +17,7 @@
     "coding-assistant",
     "openrouter"
   ],
-  "author": "",
+  "author": "myagent contributors",
   "license": "ISC",
   "dependencies": {
     "commander": "^15.0.0",

@@ -15,11 +15,11 @@
 
 ## Why
 
-The RooCode VS Code extension kept failing, and most "AI coding agents" are twitchy, expensive, or
-lock you to one vendor. `myagent` is the opposite: a lean CLI (12 source files, no server, no
-database) that talks to **six independent providers with your own API keys**, gives you an honest
-numbered-menu model picker instead of a black-box default, and classifies every error with a fix
-hint instead of dumping a stack trace.
+Most "AI coding agents" lock you into one vendor or one environment: one API key, one hard-coded
+model, no way to swap, and a crash if the bill runs out. `myagent` inverts that: a lean, dependency-light
+CLI (12 source files, no server, no database) that runs entirely in your terminal and treats model
+providers as swappable, independently-verified slots. Bring your own keys, pick any model from any
+provider, and the tool tells you honestly when something is wrong — and what to do about it.
 
 It is built for **students and hobbyists first**: every provider slot has a real free tier, and the
 whole design (decoupled key/model/discovery/error handling per provider) means adding a new provider

@@ -1,4 +1,4 @@
-# myagent
+# myagent  [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/sunilt808/Myagent)
 
 > **The terminal AI coding agent with no vendor lock-in.** Chat with any model from any provider —
 > hard provider isolation, live model discovery, honest error handling, and a REPL that never dies.

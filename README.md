@@ -269,33 +269,33 @@ continues. Common safe bash commands (`git status`, `ls`, `cd`, `node -v`…) by
 ### Overview
 
 ```
-            you
-             │
-             ↓
-      ┌─────────────┐
-      │   myagent   │
-      │    CLI      │
-      └──────┬──────┘
-             │
-┌────────────┼────────────┐
-↓            ↓            ↓
-Commands   Model System  Sessions
-   │            │            │
-   │            ↓            │
-   │      Provider Router    │
-   │            │            │
-   │   ┌────────┼────────┐   │
-   │   ↓        ↓        ↓   │
-   │  Groq   Gemini   Mistral│
-   │    │        │        │   │
-   │   └────────┼────────┘   │
-   │            │            │
-   ↓            ↓            ↓
- File Tools    AI Response  Save/Load
-   │
-┌────┼────┐
-↓    ↓    ↓
-Read Edit Terminal
+                       you
+                        │
+                        ↓
+                 ┌─────────────┐
+                 │   myagent   │
+                 │    CLI      │
+                 └──────┬──────┘
+                        │
+          ┌─────────────┼────────────┐
+          ↓             ↓            ↓
+       Commands      Model System   Sessions
+          │             │            │
+          │             ↓            │
+          │       Provider Router    │
+          │             │            │
+          │   ┌─────────┼────────┐   │
+          │   ↓         ↓        ↓   │
+          │  Groq   Gemini   Mistral│
+          │   │         │        │   │
+          │   └─────────┼────────┘   │
+          │            │            │
+          ↓             ↓            ↓
+       File Tools   AI Response  Save/Load
+          │
+        ┌─┼───┐
+        ↓ ↓   ↓
+      Read Edit Terminal
 ```
 
 ### How a request flows

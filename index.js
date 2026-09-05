@@ -12,6 +12,8 @@ const { listModels, resolveModel, getModelById, setDefaultModel, getApiKey } = r
 const { runAgent, formatError } = require("./src/agent");
 const { repl, listSessions, loadSession } = require("./src/repl");
 const { getBalance, balanceHints, wasAlreadyAlerted, markAlerted } = require("./src/balance");
+const { getSlot, isConfigured, providerStatus } = require("./src/providers");
+const { classifyError } = require("./src/errors");
 const ui = require("./src/ui");
 
 async function showBalanceAlert(config) {
@@ -73,9 +75,15 @@ program
 
     if (opts.providers) {
       console.log("\n  Providers:");
-      for (const [pkey, p] of Object.entries(config.provider)) {
-        const status = getApiKey(p) ? ui.green("key set ✓") : ui.yellow("no key (set env)");
-        console.log(`  ${pkey.padEnd(12)} ${status}  ${ui.gray(p.baseURL)}`);
+      const desired = ["openrouter", "groq", "mistral", "google", "zai", "huggingface", "openai", "xai", "anthropic", "custom"];
+      const keys = Object.keys(config.provider);
+      keys.sort((a, b) => desired.indexOf(a) - desired.indexOf(b) || a.localeCompare(b));
+      for (const pkey of keys) {
+        const slot = getSlot(pkey);
+        const label = slot?.label || pkey;
+        const status = isConfigured(pkey) ? ui.green("✓ configured") : ui.yellow("✗ missing");
+        const base = config.provider[pkey]?.baseURL ? ui.gray(config.provider[pkey].baseURL) : "";
+        console.log(`  ${label.padEnd(22)} ${status}  ${base}`);
       }
       console.log("");
       process.exit(0);
@@ -104,7 +112,8 @@ program
         });
         process.stdout.write("\n");
       } catch (err) {
-        ui.error(`\n  ${formatError(err)}`);
+        const m = getModelById(config, opts.model || s.model?.id || initialModel) || resolveModel(config, opts.model || s.model?.id || initialModel);
+        ui.error(`\n  ${formatError(err, m?.provider, m?.id)}`);
       }
       process.exit(0);
     }
@@ -128,7 +137,8 @@ program
         });
         console.log("\n");
       } catch (err) {
-        ui.error(`\n  ${formatError(err)}`);
+        const m = typeof model === "string" ? (getModelById(config, model) || resolveModel(config, model)) : model;
+        ui.error(`\n  ${formatError(err, m?.provider || model?.provider, m?.id || model?.id)}`);
         process.exit(1);
       }
       process.exit(0);

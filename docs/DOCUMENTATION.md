@@ -7,6 +7,9 @@ can read/write files and run shell commands when you approve them.
 Built because the RooCode VS Code extension started failing; this tool is
 OpenCode-CLI-style but with your own key and manual model control.
 
+> **Last updated:** 2026-09-05 — provider-isolation build (v1.1)
+> See also `USE.md` (user guide) and `REVIEW-STATUS.md` (status).
+
 ---
 
 ## 1. Install
@@ -38,17 +41,23 @@ environment variables always win):
 4. `~/.myagent/.env`
 
 Edit the project `.env` (already contains `OPENROUTER_API_KEY`). You can also add keys
-for direct OpenAI / Google Gemini / xAI / Anthropic access:
+for direct OpenAI / Google Gemini / xAI / Anthropic / free-provider access:
 
 ```dotenv
 OPENROUTER_API_KEY=sk-or-v1-...
+GROQ_API_KEY=gsk_...          # free, no card
+MISTRAL_API_KEY=Xcda...       # ~1B tokens/month
+GEMINI_API_KEY=AIza...        # Google AI Studio free tier
+ZAI_API_KEY=...               # Z.ai GLM (claim free Resource Package first)
+HF_TOKEN=hf_...               # Hugging Face router
 # OPENAI_API_KEY=
-# GEMINI_API_KEY=          # you said you have a Gemini Pro key
 # XAI_API_KEY=
 # ANTHROPIC_API_KEY=
 ```
 
 > Never commit your `.env` to a repo or paste keys into chat/screenshots.
+> Each provider is read from its **own** env var only (`src/providers.js`), so an
+> unset slot fails with a clear message instead of borrowing another provider's key.
 
 ---
 
@@ -78,6 +87,7 @@ The whole point of this tool is that *you* pick the model.
 | In-session switch | `/model openrouter/qwen/qwen3-coder` |
 | Interactive picker | `/models` |
 | Show current | `/model` |
+| Provider-first picker | `/provider` or `/provider groq` |
 | Make permanent | `myagent -m <id>` writes the default into `~/.myagent/config.json` |
 
 ### Model ID format
@@ -184,21 +194,24 @@ Because `/model` is instant, treat the model like a selector rail:
 ```
 index.js              CLI entry (commander) → single-shot or REPL, env/balance bootstrap
 src/config.js         provider/model catalog, config load/save (diff-based)
+src/providers.js      provider slots: keys, discovery, per-provider cache (added v1.1)
 src/models.js         model id parsing, resolution, api key lookup
-src/agent.js          streaming agent loop (send → tool calls → continue)
+src/errors.js         error classification + provider-aware messages (added v1.1)
+src/agent.js          streaming agent loop (send → tool calls → continue) + bounded retry
 src/tools.js          file/bash/search tool implementations
 src/permissions.js    allow/ask/deny rules per tool
-src/repl.js           interactive shell, slash commands, sessions
+src/repl.js           interactive shell, slash commands, sessions, recovery menu
 src/ui.js             colors + pretty printing
 src/balance.js        OpenRouter credit lookup + low-balance alert (added Sep 2026)
-tools/test-models.js  smoke-test every catalog model
+tools/test-models.js  smoke-test every catalog model (run inside tools/ or via node)
 ```
 
 ### 4.2 Request flow
 
 1. You type a message (REPL) or pass it as an arg (single-shot).
-2. `agent.js` opens a streaming chat to the chosen model (OpenAI-compatible client,
-   `max_tokens` default 4096, timeout 180 s).
+2. `models.js` resolves the `provider/model` id; `agent.js` opens a streaming chat to the
+   chosen provider with **its own** key/baseURL (OpenAI-compatible client, `max_tokens` default
+   4096, timeout 180 s).
 3. If the model calls a tool, the tool runs (subject to permissions, section 8) and its
    result is fed back; this repeats until the model gives a final answer or hits
    `agent.maxSteps` (30).
@@ -206,23 +219,48 @@ tools/test-models.js  smoke-test every catalog model
 
 ### 4.3 Provider registry & model resolution
 
-`src/config.js` holds `DEFAULT_PROVIDERS`, each with a `baseURL`, a lazy `apiKey()`
-(getter that reads `process.env`), optional `defaultHeaders`, and a `models` map. The
-code catalog is the single source of truth; the on-disk config (`~/.myagent/config.json`)
-is deep-merged over it and stores only your diffs/overrides, so adding a model is just
-an entry under `provider.<name>.models`.
+`src/providers.js` defines one **slot** per provider (openrouter, openai, google, xai, anthropic,
+groq, mistral, zai, huggingface, custom). Each slot owns:
+
+- `envKeys` — the env vars that key is read from (**only** those; no `A || B || C` fallback chains),
+- `capabilities` (chat / streaming / toolCalls / vision),
+- `discovery` — optional `/models` endpoint config (url, auth, transform, filter),
+- lazy key resolution via `resolveKey(slot)`; `isConfigured(id)` and `providerStatus()` drive
+  `myagent --providers`.
+
+Model discovery is **hybrid**: live fetch of the provider's `/models` endpoint (8 s timeout,
+never throws) is merged over the curated catalog from `src/config.js` and cached per provider at
+`~/.myagent/providers/<id>.json` (TTL 24 h). A missing/corrupt cache falls back to the catalog, so
+the model menu always has entries.
 
 `src/models.js` resolves any string you type into a model record:
-- `parseModelId` splits `provider/slug`.
-- `getModelById` matches against the merged catalog (by full id, provider+slug, or name).
-- `resolveModel` falls back to constructing a "raw id" model record for any
-  `provider/slug` string — so you can call routes that aren't yet listed in the catalog
-  (the REPL warns "not in the catalog — will use it as a raw id").
-- `getApiModelId` maps the special `openrouter/free` router correctly.
-- `getApiKey` pulls the key from the provider's env var (injected at build time so the
-  value only ever comes from the environment, never the file).
 
-### 4.4 Tool calling loop
+- `parseModelId` splits on the **first** slash only (so `groq/openai/gpt-oss-120b` →
+  provider `groq`, model `openai/gpt-oss-120b`).
+- `getModelById` resolution order: exact full id → provider-scoped (exact then `endsWith`) →
+  unique global partial → `null` (ambiguous bare names like `gpt-4o` are intentionally null).
+- `getApiModelId` maps the special `openrouter/free` router correctly.
+- `getApiKey` pulls the key from the slot's own env var (injected at build time so the value only
+  ever comes from the environment, never the file).
+
+### 4.4 Provider isolation & error handling
+
+Hard boundary between providers; **no hidden cross-provider fallback**:
+
+- If Groq fails, the error says so with Groq's key/model — it does not quietly retry via Mistral.
+- `src/errors.js` `classifyError` maps any thrown error to one of: `auth` (401/403), `quota` (402 /
+  "insufficient balance"), `not_found` (404), `timeout` (408), `rate_limit` (429), `server` (5xx),
+  `network`, `capability` (e.g. "no tool calling"), or `unknown`. Non-errors never throw.
+- `formatProviderError` (agent-side, provider-aware) produces
+  `Provider X · Model Y: reason — fix hint` with no secrets inside.
+- `agent.js` retries transient kinds (`rate_limit`, `timeout`, `server`, `network`) up to 3× with
+  backoff `retryAfter || 2^attempt*1000` ms (cap 8 s), on top of the existing 402 output-budget
+  shrink (2048 → 256). It never switches providers to do so.
+- The REPL wraps each run in try/catch: on failure it shows a recovery menu
+  `[R] retry · [M] another model · [P] another provider · [X] exit` (invalid input re-prompts;
+  non-TTY auto-continues). The interactive session survives any failure.
+
+### 4.5 Tool calling loop
 
 `agent.js` appends your message, requests a completion with tools, and if the model
 returns `tool_calls` it executes each one via `src/tools.js` (through the permission
@@ -334,6 +372,7 @@ The list is generated from `src/config.js`, so it always matches the catalog.
 ```
 /models             list and pick a model (interactive)
 /model <id>         switch model          /model (no arg) shows current
+/provider <id>      provider-first picker (no arg = choose provider, then model)
 /permissions        view/edit tool permissions
 /config             open config file
 /clear              clear conversation history

@@ -109,6 +109,69 @@ const DEFAULT_PROVIDERS = {
       "claude-opus-5": { name: "Claude Opus 5", category: "reasoning" },
       "claude-sonnet-4": { name: "Claude Sonnet 4", category: "general" }
     }
+  },
+  groq: {
+    // Groq: permanent free tier, no credit card. Great for students.
+    // Sign up at https://console.groq.com  -> API Keys -> GROQ_API_KEY.
+    label: "Groq",
+    baseURL: "https://api.groq.com/openai/v1",
+    apiKey: () => process.env.GROQ_API_KEY,
+    defaultHeaders: {},
+    freeTier: true,
+    models: {
+      // Verified against Groq's live /models endpoint.
+      "openai/gpt-oss-120b": { name: "GPT-OSS 120B", category: "reasoning", options: {} },
+      "openai/gpt-oss-20b": { name: "GPT-OSS 20B", category: "general", options: {} },
+      "qwen/qwen3.8-27b": { name: "Qwen 3.8 27B", category: "general", options: {} },
+      "qwen/qwen3.6-27b": { name: "Qwen 3.6 27B", category: "fast", options: {} }
+    }
+  },
+  mistral: {
+    // Mistral free "Experiment" tier: ~1 billion tokens/month, resets monthly.
+    // Phone verification required, no credit card. Sign up at https://console.mistral.ai
+    // (API keys page) -> MISTRAL_API_KEY.
+    label: "Mistral",
+    baseURL: "https://api.mistral.ai/v1",
+    apiKey: () => process.env.MISTRAL_API_KEY,
+    defaultHeaders: {},
+    freeTier: true,
+    models: {
+      "codestral-latest": { name: "Codestral (coding)", category: "coding", options: {} },
+      "mistral-small-2603": { name: "Mistral Small 2.6", category: "general", options: {} },
+      "mistral-small-latest": { name: "Mistral Small (latest)", category: "general", options: {} },
+      "ministral-8b-latest": { name: "Ministral 8B", category: "fast", options: {} },
+      "magistral-small-latest": { name: "Magistral Small", category: "reasoning", options: {} },
+      "mistral-medium-2604": { name: "Mistral Medium", category: "reasoning", options: {} }
+    }
+  },
+  zai: {
+    // Z.ai (Zhipu/GLM): free tier, ~1,000 req/day, no card.
+    // Sign up at https://www.z.ai  -> API keys -> ZAI_API_KEY.
+    label: "Z.ai (GLM)",
+    baseURL: "https://api.z.ai/api/paas/v4",
+    apiKey: () => process.env.ZAI_API_KEY,
+    defaultHeaders: {},
+    freeTier: true,
+    models: {
+      "glm-5.3-flash": { name: "GLM 5.3 Flash", category: "fast", options: {} },
+      "glm-5.3": { name: "GLM 5.3", category: "general", options: {} },
+      "glm-5.2": { name: "GLM 5.2", category: "general", options: {} },
+      "glm-5": { name: "GLM 5", category: "reasoning", options: {} }
+    }
+  },
+  huggingface: {
+    // Hugging Face Inference Providers (OpenAI-compatible router).
+    // Token: HF_TOKEN (or HUGGINGFACE_TOKEN) — no card for free models.
+    label: "Hugging Face",
+    baseURL: "https://router.huggingface.co/v1",
+    apiKey: () => process.env.HF_TOKEN || process.env.HUGGINGFACE_TOKEN,
+    defaultHeaders: {},
+    freeTier: true,
+    models: {
+      "Qwen/Qwen3-30B-A3B": { name: "Qwen3 30B A3B", category: "fast", options: {} },
+      "meta-llama/Meta-Llama-3.1-8B-Instruct": { name: "Llama 3.1 8B", category: "general", options: {} },
+      "mistralai/Mistral-7B-Instruct-v0.3": { name: "Mistral 7B", category: "general", options: {} }
+    }
   }
 };
 

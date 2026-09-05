@@ -2,6 +2,7 @@ const OpenAI = require("openai");
 const { toOpenAITools, executeTool } = require("./tools");
 const { makePermissionChecker } = require("./permissions");
 const { resolveModel, ensureApiConfig, getApiModelId } = require("./models");
+const { classifyError } = require("./errors");
 const ui = require("./ui");
 
 function buildSystemPrompt(cwd, extra) {
@@ -50,13 +51,16 @@ function isOutputBudgetError(err) {
   return status === 402 || /more credits|fewer max_tokens|can only afford|insufficient.*balance/i.test(msg);
 }
 
-// Ask the model once, streaming, and accumulate the full turn. If the provider
-// refuses because the account balance can't cover the requested max_tokens (402),
-// shrink max_tokens and retry up to a small floor so small tasks still succeed
-// instead of failing outright.
+// Ask the model once, streaming, and accumulate the full turn. Handles two
+// retry classes independently:
+//  - 402 (output budget): shrink max_tokens and retry so small tasks still work.
+//  - transient (429/timeout/5xx/network): bounded backoff, respecting Retry-After.
+// Never retries permanent errors and never switches providers/models.
 async function requestModel(client, modelId, messages, hasWeb, modelOptions, maxTokensParam, onText) {
   const MIN_TOKENS = 256;
+  const MAX_TRANSIENT_RETRIES = 3;
   let maxTokens = maxTokensParam;
+
   for (let attempt = 0; attempt < 8; attempt++) {
     try {
       const response = await client.chat.completions.create({
@@ -94,10 +98,18 @@ async function requestModel(client, modelId, messages, hasWeb, modelOptions, max
       }
       return { toolAcc, content, finished };
     } catch (err) {
+      const cls = classifyError(err);
       if (isOutputBudgetError(err) && maxTokens > MIN_TOKENS) {
         maxTokens = Math.max(MIN_TOKENS, Math.floor(maxTokens / 2));
         if (onText)
           onText(`\n⤷ small balance — retrying with fewer output tokens (${maxTokens})…\n`);
+        continue;
+      }
+      if (cls.retryable && attempt < MAX_TRANSIENT_RETRIES) {
+        const delay = Math.min((cls.retryAfter || 0) || Math.pow(2, attempt) * 1000, 8000);
+        if (onText)
+          onText(`\n⤷ ${cls.label} — retrying in ${Math.round(delay / 1000)}s…\n`);
+        await new Promise((r) => setTimeout(r, delay));
         continue;
       }
       throw err;
@@ -209,11 +221,32 @@ function detailOf(name, args) {
   }
 }
 
-function formatError(err) {
-  const msg = err?.error?.message || err?.message || String(err);
-  if (/402|5400|credit|insufficient|balance/i.test(msg))
-    return `${msg} — out of credits? Top up at openrouter.ai/credits or replace OPENROUTER_API_KEY in .env / ~/.myagent/.env.`;
-  return msg;
+function formatError(err, providerId, modelId) {
+  const cls = classifyError(err);
+  const providerLabel = providerId || "provider";
+  const modelLabel = modelId || "";
+  const base = cls.label;
+
+  let extra = "";
+  if (cls.kind === "quota" && /402|credits|insufficient|balance|budget|more credits/i.test(String(err?.error?.message || err?.message || ""))) {
+    extra =
+      providerId === "openrouter"
+        ? " — out of credits? Top up at openrouter.ai/credits or replace OPENROUTER_API_KEY in .env / ~/.myagent/.env, or pick a free model."
+        : " — this provider's account has no credits/quota for this model. Check its free-tier limits or pick another model (the 402-shrink already tried smaller output budgets).";
+  }
+  if (cls.kind === "auth") {
+    extra = " — check the API key for this provider in .env / ~/.myagent/.env.";
+  }
+  if (cls.kind === "not_found") {
+    extra = " — is that model ID valid for this provider? Run /model to pick from the catalog.";
+  }
+  if (cls.kind === "rate_limit") {
+    extra = " — hit this provider's rate limit; wait or pick another model/provider.";
+  }
+  if (cls.kind === "server") {
+    extra = " — the provider's server had a problem; try again later.";
+  }
+  return `Provider ${providerLabel}${modelLabel ? ` · Model ${modelLabel}` : ""}: ${base}${extra}`;
 }
 
 module.exports = { runAgent, buildSystemPrompt, formatError };

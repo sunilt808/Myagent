@@ -3,11 +3,12 @@ const fs = require("fs");
 const path = require("path");
 const os = require("os");
 const { loadConfig, saveConfig, CONFIG_PATH } = require("./config");
-const { listModels, resolveModel, getModelById, setDefaultModel } = require("./models");
-const { runAgent, formatError } = require("./agent");
+const { listModels, resolveModel, getModelById } = require("./models");
+const { runAgent } = require("./agent");
+const { getSlot, isConfigured, getModels } = require("./providers");
+const { classifyError } = require("./errors");
 const crypto = require("crypto");
 const ui = require("./ui");
-const { configPath } = require("./models");
 
 const BANNER = ui.green(`
    ███╗   ███╗██╗   ██╗ █████╗  ██████╗ ███████╗███╗   ██╗████████╗
@@ -59,11 +60,13 @@ function newSessionId() {
 
 function printHelp() {
   ui.log(ui.dim("  Commands:"));
-  ui.log(ui.dim("    /models             open the numbered model menu"));
-  ui.log(ui.dim("    /model <name>       filter + pick, e.g. /model gemma  (>1 match shows menu)"));
-  ui.log(ui.dim("                        /model gpt-4o  switches directly"));
+  ui.log(ui.dim("    /models             open the flat numbered model menu (all providers)"));
+  ui.log(ui.dim("    /model              provider-first flow: pick provider, then a model"));
+  ui.log(ui.dim("    /model <name>       direct/filter: e.g. /model gpt-4o, /model groq/openai/gpt-oss-120b"));
   ui.log(ui.dim("                        /model         opens the full menu"));
   ui.log(ui.dim("                        Tab completes a partial provider/model id"));
+  ui.log(ui.dim("    /provider           pick a provider, then a model from it"));
+  ui.log(ui.dim("    /provider <id>      open that provider's model picker, e.g. /provider groq"));
   ui.log(ui.dim("    /permissions        show/edit tool permissions"));
   ui.log(ui.dim("    /config             open the config file (creates defaults first)"));
   ui.log(ui.dim("    /clear              clear conversation history"));
@@ -87,6 +90,46 @@ function findMatchingModels(modelList, term) {
       (m.name || "").toLowerCase().includes(t) ||
       String(m.model).toLowerCase().includes(t)
   );
+}
+
+// Numbered provider menu. Returns a provider id or null (cancel).
+function providerMenu(rl, config) {
+  return new Promise(async (resolve) => {
+    const slots = Object.entries(config.provider || {})
+      .map(([pkey]) => getSlot(pkey))
+      .filter(Boolean)
+      .filter((s) => s.id !== "custom");
+    const desired = ["openrouter", "groq", "mistral", "google", "zai", "huggingface", "openai", "xai", "anthropic"];
+    slots.sort((a, b) => desired.indexOf(a.id) - desired.indexOf(b.id));
+
+    ui.log("");
+    ui.log(ui.cyan(ui.bold("  Select a provider — number, provider id, or 0 = cancel")));
+    slots.forEach((s, i) => {
+      const status = isConfigured(s.id) ? ui.green("✓ configured") : ui.yellow("✗ missing");
+      ui.log(`    ${String(i + 1).padStart(2)}. ${ui.cyan(s.label)}  ${status}`);
+    });
+    ui.log("");
+    rl.question(ui.dim("  Pick a provider > "), (line) => {
+      const answer = line.trim();
+      if (!answer || answer === "0") return resolve(null);
+      const asNum = parseInt(answer, 10);
+      if (!isNaN(asNum) && asNum >= 1 && asNum <= slots.length) return resolve(slots[asNum - 1].id);
+      const byId = slots.find((s) => s.id.toLowerCase() === answer.toLowerCase());
+      if (byId) return resolve(byId.id);
+      const byLabel = slots.find((s) => s.label.toLowerCase().includes(answer.toLowerCase()));
+      if (byLabel) return resolve(byLabel.id);
+      ui.log(ui.red(`  No provider matched "${answer}".`));
+      resolve(null);
+    });
+  });
+}
+
+// Provider-scoped model menu: only models belonging to `providerId` are shown.
+async function modelMenuForProvider(rl, config, providerId, currentModelId) {
+  const models = await getModels(config, providerId);
+  const currentProvider = currentModelId?.split("/")[0];
+  const current = currentProvider === providerId ? currentModelId : undefined;
+  return await modelMenu(rl, models, current || "", "");
 }
 
 // Numbered model menu. Optionally filters to `filterText` matches first.
@@ -119,8 +162,9 @@ function modelMenu(rl, modelList, currentId, filterText) {
         const idx = flat.length;
         flat.push(m);
         const freeTag = m.category === "free" || /:free$/.test(m.model) ? ui.green(" [free]") : "";
+        const toolsTag = `[tools ${getSlot(pkey)?.capabilities?.toolCalls ? ui.green("✓") : ui.dim("—")}]`;
         const curTag = m.id === currentId ? ui.dim("  ◀ current") : "";
-        ui.log(`    ${String(idx + 1).padStart(2)}. ${ui.cyan(m.name)}${freeTag}  ${ui.gray(m.id)}${curTag}`);
+        ui.log(`    ${String(idx + 1).padStart(2)}. ${ui.cyan(m.name)}${freeTag}  ${toolsTag}  ${ui.gray(m.id)}${curTag}`);
       }
     }
     ui.log("");
@@ -166,26 +210,71 @@ async function handleCommand(rl, line, state) {
       process.exit(0);
       break;
     case "models":
-    case "model":
       {
+        // Flat grouped menu (all providers) — backward compatible.
         const models = listModels(config);
+        ui.log("");
+        ui.log(ui.bold("  Current model: ") + ui.cyan(state.model.id));
+        const picked = await modelMenu(rl, models, state.model.id, "");
+        if (!picked) return true;
+        state.model = picked;
+        ui.log(ui.green(`  → Model set to ${picked.id}`));
+        return true;
+      }
+    case "provider":
+      {
         if (!arg) {
-          ui.log("");
-          ui.log(ui.bold("  Current model: ") + ui.cyan(state.model.id));
-          const picked = await modelMenu(rl, models, state.model.id, "");
+          const pid = await providerMenu(rl, config);
+          if (!pid) return true;
+          const picked = await modelMenuForProvider(rl, config, pid, state.model.id);
           if (!picked) return true;
           state.model = picked;
-          ui.log(ui.green(`  → Model set to ${picked.id}`));
+          ui.log(ui.green(`  → ${picked.provider} → ${picked.model} (${picked.id})`));
           return true;
         }
-        // Exact catalog id, or a bare model name (e.g. "gpt-4o", "gemma").
+        // Direct /provider <id> — open that provider's model picker.
+        const slot = getSlot(arg);
+        if (!slot) {
+          ui.log(ui.red(`  Unknown provider: ${arg}. Try /provider or /provider groq`));
+          return true;
+        }
+        const picked = await modelMenuForProvider(rl, config, slot.id, state.model.id);
+        if (!picked) return true;
+        state.model = picked;
+        ui.log(ui.green(`  → ${picked.provider} → ${picked.model} (${picked.id})`));
+        return true;
+      }
+    case "model":
+      {
+        if (!arg) {
+          // Provider-first flow: pick provider, then a model from that provider only.
+          ui.log("");
+          ui.log(ui.bold("  Current model: ") + ui.cyan(state.model.id));
+          const pid = await providerMenu(rl, config);
+          if (!pid) return true;
+          const picked = await modelMenuForProvider(rl, config, pid, state.model.id);
+          if (!picked) return true;
+          state.model = picked;
+          ui.log(ui.green(`  → ${picked.provider} → ${picked.model} (${picked.id})`));
+          return true;
+        }
+        // Direct provider/model selection.
         let found = getModelById(config, arg);
         if (found) {
           state.model = found;
           ui.log(ui.green(`  → Model set to ${found.id}`));
           return true;
         }
-        // Partial / fuzzy match: unique result applies directly, otherwise prompt.
+        // Search within the current provider first; then slight fuzzy global match.
+        const models = listModels(config);
+        const currentProvider = state.model.provider;
+        const scoped = findMatchingModels(models.filter((m) => m.provider === currentProvider), arg);
+        if (scoped.length === 1) {
+          state.model = scoped[0];
+          ui.log(ui.yellow(`  ${arg} matched ${ui.bold(scoped[0].id)} in ${currentProvider} — set.`));
+          ui.log(ui.green(`  → Model set to ${scoped[0].id}`));
+          return true;
+        }
         const matches = findMatchingModels(models, arg);
         if (matches.length === 1) {
           state.model = matches[0];
@@ -200,7 +289,6 @@ async function handleCommand(rl, line, state) {
           ui.log(ui.green(`  → Model set to ${picked.id}`));
           return true;
         }
-        // No catalog match: allow raw/provider-prefixed ids (e.g. a brand-new model).
         if (String(arg).includes("/")) {
           found = resolveModel(config, arg);
           ui.log(ui.yellow(`  ${arg} is not in the catalog — using it as a raw id.`));
@@ -208,7 +296,7 @@ async function handleCommand(rl, line, state) {
           ui.log(ui.green(`  → Model set to ${found.id}`));
           return true;
         }
-        ui.log(ui.red(`  Unknown model: ${arg}. Try /model <partial name> (e.g. /model gemma) or /model to browse.`));
+        ui.log(ui.red(`  Unknown model: ${arg}. Try /model <partial name> (e.g. /model gemma) or /model to browse providers.`));
       }
       return true;
     case "permissions":
@@ -265,14 +353,18 @@ async function handleCommand(rl, line, state) {
         }
         state.messages = s.messages || [];
         state.sessionId = s.id;
-        state.model = s.model || state.model;
+        if (s.model) state.model = s.model;
+        const pid = state.model?.provider;
+        if (pid && !isConfigured(pid)) {
+          ui.log(ui.yellow(`  ⚠ Provider "${pid}" has no API key set. /model or /provider to choose another.`));
+        }
         ui.log(ui.green(`  Loaded session "${s.title || s.id}" (${state.messages.length} messages).`));
       }
       return true;
     case "save":
       {
         const id = (arg || "sess-" + crypto.randomBytes(4).toString("hex")).replace(/\.json$/, "");
-        const s = { id, title: generateTitle(state.messages) || arg || "Untitled", messages: state.messages, model: state.model };
+        const s = { id, title: generateTitle(state.messages) || arg || "Untitled", messages: state.messages, model: state.model, provider: state.model?.provider };
         saveSession(id, s);
         state.sessionId = id;
         ui.log(ui.green(`  Saved session as ${id}`));
@@ -311,9 +403,15 @@ async function repl({ initialModel, cwd, verbose, noBanner }) {
     terminal: true,
     completer: (line) => {
       // Tab-complete /model and /models with catalog ids and provider prefixes.
-      const m = line.match(/^\/models?\s+(\S*)$/i);
+      const m = line.match(/^\/(models?|provider)\s+(\S*)$/i);
       if (!m) return [[], line];
-      const prefix = m[1].toLowerCase();
+      const cmdLower = m[1].toLowerCase();
+      const prefix = m[2].toLowerCase();
+      if (cmdLower === "provider") {
+        const pids = Object.keys(config.provider || {}).filter((k) => getSlot(k));
+        const hits = pids.filter((id) => id.toLowerCase().startsWith(prefix)).slice(0, 40);
+        return [hits, prefix];
+      }
       const ids = listModels(loadConfig()).map((x) => `${x.provider}/${x.model}`);
       const hits = [...new Set(ids)].filter((id) => id.toLowerCase().startsWith(prefix)).slice(0, 40);
       return [hits, prefix];
@@ -382,6 +480,7 @@ async function repl({ initialModel, cwd, verbose, noBanner }) {
       ui.log(ui.dim(`\n  ${state.model.id} → `));
 
     state.messages.push({ role: "user", content: prompt });
+    state.pendingPrompt = prompt;
     ui.log(ui.dim("\n  ── assistant ──"));
     try {
       let fullText = "";
@@ -405,10 +504,96 @@ async function repl({ initialModel, cwd, verbose, noBanner }) {
       }
       autoSave(state);
     } catch (err) {
-      ui.log(ui.red("\n  ⚠ " + formatError(err)));
       state.messages.pop();
+      const recovery = await errorRecoveryMenu(rl, err, state, config, verbose, cwd);
+      if (recovery === "exit") {
+        ui.log(ui.dim("Bye!"));
+        process.exit(0);
+      }
     }
   }
+}
+
+async function errorRecoveryMenu(rl, err, state, config, verbose, cwd) {
+  const cls = classifyError(err);
+  ui.log("");
+  ui.log(ui.red(`  ⚠ Request failed`));
+  ui.log(ui.red(`  Provider: ${state.model.provider}`));
+  ui.log(ui.red(`  Model:    ${state.model.id}`));
+  ui.log(ui.red(`  Reason:   ${cls.label} (${cls.kind})`));
+
+  if (!process.stdin.isTTY) {
+    ui.log(ui.dim("  (non-interactive — returning to prompt)"));
+    return "continue";
+  }
+
+  ui.log("");
+  const answer = async () => {
+    while (true) {
+      const ans = await new Promise((resolve) => {
+        rl.question(ui.dim("  [R] try again   [M] another model   [P] another provider   [X] exit > "), (line) => {
+          resolve((line || "").trim().toLowerCase());
+        });
+      });
+      if (!ans) continue;
+      if (ans === "x" || ans === "exit" || ans === "q") return "exit";
+      if (ans === "r" || ans === "retry" || ans === "y") return "retry";
+      if (ans === "m" || ans === "model") return "model";
+      if (ans === "p" || ans === "provider") return "provider";
+      ui.log(ui.dim("  (choose R, M, P, or X)"));
+    }
+  };
+
+  const ans = await answer();
+
+  if (ans === "exit") return "exit";
+  if (ans === "retry") {
+    state.messages.push({ role: "user", content: state.pendingPrompt });
+    ui.log(ui.dim("\n  ── assistant ──"));
+    try {
+      let fullText = "";
+      const result = await runAgent({
+        model: state.model.id,
+        messages: state.messages,
+        config,
+        cwd,
+        verbose,
+        onText: (t) => {
+          process.stdout.write(t);
+          fullText += t;
+        }
+      });
+      process.stdout.write("\n");
+      state.messages = result.history;
+      if (fullText && fullText.trim()) state.messages.push({ role: "assistant", content: fullText });
+      autoSave(state);
+    } catch (err2) {
+      ui.log(ui.red("\n  ⚠ "));
+      state.messages.pop();
+      return await errorRecoveryMenu(rl, err2, state, config, verbose, cwd);
+    }
+    return "continue";
+  }
+  if (ans === "model") {
+    const picked = await modelMenuForProvider(rl, config, state.model.provider, state.model.id);
+    if (picked) {
+      state.model = picked;
+      ui.log(ui.green(`  → Model set to ${picked.id}`));
+    }
+    return "continue";
+  }
+  if (ans === "provider") {
+    const pid = await providerMenu(rl, config);
+    if (pid) {
+      const picked = await modelMenuForProvider(rl, config, pid, state.model.id);
+      if (picked) {
+        state.model = picked;
+        ui.log(ui.green(`  → ${picked.provider} → ${picked.model} (${picked.id})`));
+      }
+    }
+    return "continue";
+  }
+  return "continue";
 }
 
 function autoSave(state) {
@@ -416,9 +601,10 @@ function autoSave(state) {
     id: state.sessionId,
     title: generateTitle(state.messages) || "Untitled",
     messages: state.messages,
-    model: state.model
+    model: state.model,
+    provider: state.model.provider
   };
   saveSession(s.id, s);
 }
 
-module.exports = { repl, listSessions, loadSession, saveSession, newSessionId, BANNER, modelMenu, findMatchingModels };
+module.exports = { repl, listSessions, loadSession, saveSession, newSessionId, BANNER, modelMenu, findMatchingModels, providerMenu, modelMenuForProvider, errorRecoveryMenu };

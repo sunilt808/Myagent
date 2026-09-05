@@ -1,11 +1,14 @@
 const { loadConfig, getProvider, saveConfig, CONFIG_PATH } = require("./config");
+const { getSlot, resolveKey, getCapabilities } = require("./providers");
 
 function parseModelId(raw) {
-  const parts = String(raw).split("/");
-  if (parts.length >= 2) {
-    return { provider: parts[0], model: parts.slice(1).join("/") };
+  // Split on the FIRST slash only. Model ids themselves may contain "/",
+  // e.g. provider=groq, model=openai/gpt-oss-120b.
+  const idx = String(raw).indexOf("/");
+  if (idx >= 0) {
+    return { provider: String(raw).slice(0, idx), model: String(raw).slice(idx + 1) };
   }
-  return { provider: null, model: parts[0] };
+  return { provider: null, model: String(raw) };
 }
 
 function listModels(config) {
@@ -29,16 +32,29 @@ function listModels(config) {
 function getModelById(config, id) {
   const { provider, model } = parseModelId(id);
   const candidates = listModels(config);
+
+  // 1. Exact full provider/model id (e.g. groq/openai/gpt-oss-120b)
   let hit = candidates.find((m) => m.id === id);
-  if (!hit && provider) {
+  if (hit) return hit;
+
+  // 2. Provider-scoped match (provider + exact model id within it)
+  if (provider) {
     hit = candidates.find((m) => m.provider === provider && m.model === model);
+    if (!hit) hit = candidates.find((m) => m.provider === provider && m.model.endsWith(model));
+    if (hit) return hit;
   }
-  if (!hit) {
-    hit = candidates.find(
-      (m) => m.model === id || m.model.endsWith("/" + id) || (m.name || "").toLowerCase() === String(id).toLowerCase()
-    );
-  }
-  return hit || null;
+
+  // 3. Unique global partial match
+  const matches = candidates.filter(
+    (m) => m.model === id || m.model.endsWith("/" + id) || (m.name || "").toLowerCase() === String(id).toLowerCase()
+  );
+  if (matches.length === 1) return matches[0];
+
+  return null;
+}
+
+function listModelsForProvider(config, provider) {
+  return listModels(config).filter((m) => m.provider === provider);
 }
 
 function getApiModelId(model) {
@@ -56,13 +72,15 @@ function resolveModel(config, requested) {
 
   const { provider, model } = parseModelId(modelId);
   const p = getProvider(config, provider || "openrouter") || getProvider(config, "openrouter");
+  const cap = getCapabilities(provider || "openrouter");
   return {
     id: `${provider || "openrouter"}/${model}`,
     provider: provider || "openrouter",
     model,
     name: model,
     category: "general",
-    options: {}
+    options: {},
+    capabilities: cap,
   };
 }
 
@@ -88,30 +106,25 @@ function ensureApiConfig(model) {
   if (!p) throw new Error(`Unknown provider "${model.provider}". Check ${CONFIG_PATH}`);
   const key = getApiKey(p);
   if (!key) {
-    const envHint =
-      model.provider === "openrouter"
-        ? "OPENROUTER_API_KEY"
-        : model.provider === "openai"
-        ? "OPENAI_API_KEY"
-        : model.provider === "google"
-        ? "GEMINI_API_KEY"
-        : model.provider === "xai"
-        ? "XAI_API_KEY"
-        : "ANTHROPIC_API_KEY";
+    const slot = getSlot(model.provider);
+    const envHint = slot?.envKeys?.length ? slot.envKeys.join(" or ") : "the provider's API key";
+    const label = slot?.label || model.provider;
     throw new Error(
-      `No API key for provider "${model.provider}". Add ${envHint} to your .env file (in the myagent folder) or set it as an environment variable.`
+      `No API key for provider "${label}". Add ${envHint} to your .env file (in the myagent folder) or set it as an environment variable.`
     );
   }
   return {
     apiKey: key,
     baseURL: p.baseURL,
-    defaultHeaders: p.defaultHeaders || {}
+    defaultHeaders: p.defaultHeaders || {},
+    capabilities: getCapabilities(model.provider),
   };
 }
 
 module.exports = {
   parseModelId,
   listModels,
+  listModelsForProvider,
   getModelById,
   getApiModelId,
   getApiKey,

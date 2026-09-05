@@ -1,5 +1,9 @@
 # REVIEW / STATUS — myagent (Sep 5, 2026)
 
+> **Last updated:** 2026-09-05 · provider-isolation build (v1.1) tested live.
+> See `result.txt` for the full pass/fail log and `provider-response-test.txt`
+> for the per-provider coding-question responses.
+
 Built as an OpenCode-CLI-style terminal coding agent because the RooCode VS Code
 extension is failing. API-only (no local models), manual model selection, tool calling
 with permission prompts, CLI + interactive REPL, globally installable.
@@ -13,6 +17,10 @@ with permission prompts, CLI + interactive REPL, globally installable.
 | CLI entry (single-shot + REPL) | Working |
 | Streaming agent loop + tool calling | Working (tested live) |
 | Manual model selection (`-m`, `/model`, `/models`) | Working |
+| **Provider isolation (v1.1)** — per-provider keys/models/discovery/cache/errors | Working (tested) |
+| **Provider-first picking** (`/provider`, `/model` provider-first) | Working (tested) |
+| **Model discovery + 24h per-provider cache** (`~/.myagent/providers/<id>.json`) | Working (tested) |
+| **Error classification + bounded retry + `[R]/[M]/[P]/[X]` recovery** | Working (tested) |
 | 40+ model catalog (free + top-tier) | Working, curated to verified-live |
 | Tools: bash/read/write/edit/glob/grep/list/webfetch/apply_patch | Working |
 | Permission prompts (TTY ask/allow/remember) | Working |
@@ -26,7 +34,7 @@ with permission prompts, CLI + interactive REPL, globally installable.
 | REPL piped-EOF crash (`ERR_USE_AFTER_CLOSE`) | Fixed + retested |
 | grep node-fallback (when ripgrep missing) | Added |
 
-**Verdict: usable now.** One code review pass + full model smoke test done below.
+**Verdict: usable now, multi-provider.** Full provider-isolation test log in `result.txt`.
 
 ---
 
@@ -91,6 +99,39 @@ Requested: check Microsoft's newly launched model. Findings:
 
 ---
 
+## 2b. Provider-isolation build (v1.1) — live test log (Sep 5, 2026)
+
+One coding question (`length_of_longest_substring(s)`, Python) sent to every configured provider:
+
+| Provider | Model | Result |
+|---|---|---|
+| Groq | `groq/openai/gpt-oss-20b` | ✅ code returned |
+| Google Gemini | `google/gemini-3.7-flash` | ✅ code returned |
+| Mistral | `mistral/codestral-latest` | ✅ code returned (after free-tier 2 RPM window opened) |
+| Hugging Face | `huggingface/Qwen/Qwen3-30B-A3B` | ✅ code returned |
+| Z.ai | `zai/glm-4.5` | ⚠ quota — needs a free Resource Package at platform.z.ai first |
+
+Unit + integration checks (full log in `result.txt`):
+
+- Credential isolation: each slot resolves **only** its own env var; unconfigured provider throws a
+  clear "No API key" message instead of borrowing another key. ✓
+- Namespace resolution: first-slash split (`groq/openai/gpt-oss-120b`), direct / scoped / ambiguous
+  (bare `gpt-4o` → null) / unique-global all verified. ✓
+- Discovery + cache: groq (4), mistral (23), zai (10), google (4), huggingface (141) live-listed;
+  corrupted cache file handled gracefully (falls back to catalog, re-caches). ✓
+- classifyError: 401→auth, 402→quota, 404→not_found, 408→timeout(retry), 429→rate_limit(retry,
+  honors Retry-After), 5xx→server(retry), network(retry), Z.ai "Insufficient balance" HTTP429→quota
+  (true cause), tool-call unsupported→capability; null/{} → unknown (never throws). ✓
+- Bounded retry verified live: Mistral 429 → `retrying in 1s→2s→4s` then clean classified error,
+  no provider switch. ✓
+- REPL recovery: `[R]/[M]/[P]/[X]` menu works (provider switch, model switch, cancel, exit);
+  invalid input re-prompts; non-TTY auto-continues. ✓
+- Sessions persist `{provider, model, messages}`; `/load` revalidates the provider key. ✓
+- `node --check` on all 7 modules. ✓
+- OpenRouter: untouched (no calls made during this build's testing); 43 models + default preserved. ✓
+
+---
+
 ## 3. Gaps & known bugs
 
 | # | Issue | Impact / notes |
@@ -115,6 +156,8 @@ Requested: check Microsoft's newly launched model. Findings:
 - REPL: `/help`, real prompt echo + streamed answer, `/exit`, piped-EOF clean exit ✓
 - `npm link` → `myagent --providers` from `C:\Users\sunil` (outside project) ✓ — key found
 - Full model smoke test (75 models) — section 2 ✓
+- Provider-isolation build (v1.1): live coding question per provider, credential/namespace/
+  discovery/cache/classifyError/retry/recovery tests — section 2b + `result.txt` ✓
 
 ## 5. Not tested / next steps (suggested)
 
@@ -122,4 +165,5 @@ Requested: check Microsoft's newly launched model. Findings:
 - Add a way for the agent to "always allow once" (`a`) persists — not persisted across restarts.
 - Session resume UX polish (`/load` picks from list; multi-turn memory already works).
 - Re-verify Google/Microsoft directly once real keys are added.
+- Claim the Z.ai free Resource Package, then re-run the `zai/*` coding question.
 - Re-run smoke test in ~2 weeks to catch free-tier drift.

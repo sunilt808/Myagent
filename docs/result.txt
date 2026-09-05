@@ -1,0 +1,160 @@
+======================================================================
+  myagent - Provider-Isolation Build: FULL TEST RESULTS
+======================================================================
+  Generated : 2026-09-05 18:24:31
+  Platform  : Windows / PowerShell 5.1 / Node v22.17.0
+  Project   : C:\Users\sunil\myagent
+  Scope     : provider isolation, provider-first model selection, hybrid model
+              discovery + per-provider cache, centralized error classification,
+              bounded retry, REPL recovery menu. OpenRouter preserved untouched.
+
+######################################################################
+# 1. LIVE CLIENT TESTS (CLI single-shot; NO OpenRouter API calls made) #
+######################################################################
+
+  groq/openai/gpt-oss-120b   -> OK  (immediate reply)
+  google/gemini-3.8-flash    -> OK  (immediate reply)
+  mistral/codestral-latest   -> OK  (succeeded once the 2 RPM free-tier window opened)
+  mistral/mistral-small-2603 -> Rate limited: bounded backoff (1s->2s->4s), classified
+                                429 rate_limit w/ provider+model context, NO fallback, no crash.
+  zai/glm-5.3-flash / glm-4.5-> API: HTTP 429 body {code:1113,'Insufficient balance or
+                                no resource package. Please recharge.'} - ACCOUNT-LEVEL:
+                                Z.ai console requires claiming a free/paid Resource
+                                Package before the key works. Classified as quota (no retry), no crash.
+
+  NOTES
+  - Mistral free tier = 2 RPM ceiling; bounded retry respects it and exits cleanly.
+  - Z.ai action: platform.z.ai -> claim a free Resource Package (glm-*) -> same key works;
+    no code change needed.
+
+######################################################################
+# 2. PROVIDER ISOLATION (credentials / config / capabilities)         #
+######################################################################
+
+  myagent --providers:
+    Providers:
+    OpenRouter             ✓ configured  https://openrouter.ai/api/v1
+    Groq                   ✓ configured  https://api.groq.com/openai/v1
+    Mistral                ✓ configured  https://api.mistral.ai/v1
+    Google Gemini          ✓ configured  https://generativelanguage.googleapis.com/v1beta/openai
+    Z.ai (GLM)             ✓ configured  https://api.z.ai/api/paas/v4
+    Hugging Face           ✓ configured  https://router.huggingface.co/v1
+    OpenAI                 ✗ missing  https://api.openai.com/v1
+    xAI (Grok)             ✗ missing  https://api.x.ai/v1
+    Anthropic              ✗ missing  https://api.anthropic.com/v1
+    Custom (OpenAI-compatible) ✗ missing  https://your-endpoint.example.com/v1
+  - Every slot reads ONLY its own env keys (per-slot resolveKey; no || chains).
+  - ensureApiConfig(unconfigured 'openai') -> throws 'No API key...' (verified)
+  - ensureApiConfig(configured 'groq')     -> returns key+baseURL+capabilities (verified)
+  - No cross-provider fallback: Mistral/Z.ai failures errored only for that provider.
+
+######################################################################
+# 3. MODEL NAMESPACES & RESOLUTION (first-slash split)                #
+######################################################################
+
+  parseModelId('groq/openai/gpt-oss-120b') -> { provider:'groq', model:'openai/gpt-oss-120b' }  ok
+  parseModelId('openrouter/openai/gpt-4o') -> { provider:'openrouter', model:'openai/gpt-4o' }  ok
+  exact:          getModelById(config,'groq/openai/gpt-oss-120b') -> that model             ok
+  scoped:         getModelById(config,'groq/qwen/qwen3.8-27b')    -> that model             ok
+  ambiguous:      getModelById(config,'gpt-4o')                   -> null (2 owners)        ok
+  ambiguous:      getModelById(config,'gemini-3.8-flash')         -> null (google+openrouter) ok
+  unique global:  getModelById(config,'codestral-latest')         -> mistral/codestral-latest ok
+  unique global:  getModelById(config,'gpt-oss-20b')              -> groq/openai/gpt-oss-20b ok
+  Catalog totals: 7 providers, 77 models (openrouter 43 intact, unchanged).
+
+######################################################################
+# 4. MODEL DISCOVERY + PER-PROVIDER CACHE  (~/.myagent/providers/<id>.json, TTL 24h)  #
+######################################################################
+
+  Live discovery (real /models endpoints, 8s timeout, never throws):
+    groq        -> 4   models  (GPT-OSS 120B/20B, Qwen 3.8/3.6 27B)
+    mistral     -> 23  models  (chat subset after filter)
+    zai         -> 10  models  (GLM 5.3-flash .. 4.5)
+    google      -> 4   models
+    huggingface -> 141 models  (Qwen3-30B-A3B, Llama, Mistral 7B...)
+
+  Resilience:
+    - Corrupted cache on disk -> getModels still returns models (parse-fail handled).
+    - Re-discovery re-caches; cache files confirmed: groq.json, mistral.json.
+    - Unconfigured/missing-key provider -> curated catalog fallback (no crash, no fake key).
+    - Cache outside repo (~/.myagent/) -> not tracked by git.
+
+######################################################################
+# 5. ERROR CLASSIFICATION (src/errors.js)                             #
+######################################################################
+
+  classifyError fixtures (kind / retryable / wait):
+    401 auth                            -> auth        no-retry
+    402 quota                           -> quota       no-retry
+    404 not_found                       -> not_found   no-retry
+    408 timeout                         -> timeout     retry wait=3s
+    429 rate_limit (retry-after:7)      -> rate_limit  retry wait=7s
+    500 server                          -> server      retry wait=5s
+    network fetch failed                -> network     retry wait=5s
+    Z.ai 'Insufficient balance' (HTTP429)-> quota       no-retry (true cause detected)
+    'model does not support tool calls' -> capability  no-retry
+    null / {}                           -> unknown     no-retry (never throws)
+
+  formatProviderError sample: Provider: groq | Model: groq/qwen/qwen3.8-27b | Reason: Rate limited (rate_limit)
+  - No secrets included; credit/API-key hints are provider-aware (OpenRouter hint only for openrouter).
+
+######################################################################
+# 6. BOUNDED RETRY (src/agent.js)                                     #
+######################################################################
+
+  - Transient (rate_limit/timeout/server/network): up to 3 retries, backoff
+    'retryAfter || 2^attempt*1000' cap 8s. Verified live: Mistral 429 -> 1s..2s..4s then clean error.
+  - 402 output-budget shrink preserved (2048->256). Never switches providers on retry.
+
+######################################################################
+# 7. REPL: PROVIDER-FIRST FLOW / /PROVIDER / RECOVERY MENU            #
+######################################################################
+
+  providerMenu (numbered, [OK] configured / [X] missing, 0=cancel):
+    - pick '2' -> groq   |  pick '0' -> null (cancel)   (both verified)
+
+  modelMenuForProvider (provider-scoped; [tools OK] tag; fuzzy filter):
+    - groq #1    -> groq/openai/gpt-oss-120b   (isolated to groq,   verified)
+    - mistral #1 -> mistral/codestral-latest   (isolated to mistral, verified)
+    - zai 'glm-5.3' -> zai/glm-5.3             (verified)
+    - findMatchingModels('gpt-oss') -> only groq models (verified)
+
+  /provider command, /provider <id>, help text, Tab completion: present in source.
+
+  errorRecoveryMenu (Request failed / Provider / Model / Reason):
+    [R] retry  -> re-runs agent w/ state.pendingPrompt (inlined)
+    [M] model  -> modelMenuForProvider; sets state.model
+    [P] provider -> providerMenu + model picker; updates provider+model  (verified: P+Mistral+1 -> continue, provider=mistral)
+    [X] exit   -> returns 'exit' -> REPL exits gracefully               (verified)
+    invalid 'z' -> re-prompts until valid, then [X] -> 'exit'           (verified, fixed this session)
+    non-TTY    -> '(non-interactive, returning to prompt)' -> continue  (verified)
+    REPL main loop wraps runAgent in try/catch: failed request never kills REPL.
+
+  Sessions store provider: saveSession/loadSession round-trip keeps provider:mistral (verified).
+
+  Syntax gate: node --check on 7 modules (errors, providers, config, models, agent, repl, index) -> ALL OK.
+
+######################################################################
+# 8. OUTCOME SUMMARY                                                  #
+######################################################################
+
+  DONE   - Hard provider isolation (credentials/config/discovery/cache/errors per provider).
+  DONE   - Provider-first model selection (/model menu) + direct -m/--model preserved.
+  DONE   - New /provider command (+ tab completion, help text).
+  DONE   - Hybrid model discovery w/ 24h per-provider cache + catalog fallback + corruption-safe.
+  DONE   - Centralized error classification; bounded retry; [R]/[M]/[P]/[X] recovery; REPL survives.
+  DONE   - OpenRouter provider block + 43 models + default untouched; no OpenRouter calls in tests.
+  DONE   - Sessions persist {provider, model, messages}; /load validates provider key.
+  DONE   - Syntax + unit + live verification (this file).
+  TODO   - Documentation refresh (docs/USE.md, DOCUMENTATION.md, REVIEW-STATUS.md, api.txt).
+  ACTION - Z.ai: claim a free Resource Package in platform.z.ai console for GLM models.
+
+  Files changed this build:
+    + src/errors.js    (new) error classifier + formatter
+    + src/providers.js (new) slot registry, isolated resolveKey, discovery, cache
+    ~ src/config.js          real Groq/Mistral catalog ids; + zai, huggingface slots
+    ~ src/models.js          first-slash parser, scoped/global resolution, capabilities
+    ~ src/agent.js           bounded transient retry + provider-aware formatError
+    ~ src/repl.js            provider-first menus, /provider, recovery menu, session provider
+    ~ index.js               labeled --providers + classified errors
+    ~ .gitignore             ignored caches / test artifacts

@@ -1,0 +1,121 @@
+[
+  {
+    "model": "openrouter/free",
+    "status": "ok",
+    "ms": 1950,
+    "reply": "The user wants the response to be exactly \"OK\". No extra pun",
+    "error": null
+  },
+  {
+    "model": "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free",
+    "status": "ok",
+    "ms": 22748,
+    "reply": "The user asks: \"Reply with exactly: OK\". So we must output e",
+    "error": null
+  },
+  {
+    "model": "openrouter/nvidia/nemotron-3-super-120b-a12b:free",
+    "status": "ok",
+    "ms": 459,
+    "reply": "We need to reply with exactly \"OK\". No extra spaces or newli",
+    "error": null
+  },
+  {
+    "model": "openrouter/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+    "status": "ok",
+    "ms": 818,
+    "reply": "OK",
+    "error": null
+  },
+  {
+    "model": "openrouter/nvidia/nemotron-3.5-lightning:free",
+    "status": "reply",
+    "ms": 825,
+    "reply": "Here's a thinking process:\n\n1.  **Analyze User Input:** The ",
+    "error": null
+  },
+  {
+    "model": "openrouter/nvidia/nemotron-nano-9b-v2:free",
+    "status": "fail",
+    "ms": 35,
+    "reply": null,
+    "error": "No endpoints found for nvidia/nemotron-nano-9b-v2:free."
+  },
+  {
+    "model": "openrouter/google/gemma-4-31b-it:free",
+    "status": "fail",
+    "ms": 606,
+    "reply": null,
+    "error": "Provider returned error"
+  },
+  {
+    "model": "openrouter/google/gemma-4-26b-a4b-it:free",
+    "status": "ok",
+    "ms": 1243,
+    "reply": "OK",
+    "error": null
+  },
+  {
+    "model": "openrouter/poolside/laguna-s-2.1:free",
+    "status": "ok",
+    "ms": 1462,
+    "reply": "OK",
+    "error": null
+  },
+  {
+    "model": "openrouter/cohere/north-mini-code:free",
+    "status": "reply",
+    "ms": 819,
+    "reply": "",
+    "error": null
+  },
+  {
+    "model": "openrouter/minimax/minimax-m2.7:free",
+    "status": "reply",
+    "ms": 1851,
+    "reply": "",
+    "error": null
+  },
+  {
+    "model": "openrouter/thinkingmachines/inkling-small:free",
+    "status": "fail",
+    "ms": 33,
+    "reply": null,
+    "error": "thinkingmachines/inkling-small:free is only available on agentic harnesses. Try plugging it into a coding agent or produ"
+  },
+  {
+    "model": "openrouter/qwen/qwen3-next-80b-a3b-instruct:free",
+    "status": "fail",
+    "ms": 34,
+    "reply": null,
+    "error": "This model is unavailable for free. The paid version is available now - use this slug instead: qwen/qwen3-next-80b-a3b-i"
+  },
+  {
+    "model": "openrouter/dots-studio/dots-3-note-preview:free",
+    "status": "reply",
+    "ms": 1040,
+    "reply": "",
+    "error": null
+  },
+  {
+    "model": "openrouter/inclusionai/ling-3.0-flash-fin:free",
+    "status": "reply",
+    "ms": 805,
+    "reply": "",
+    "error": null
+  },
+  {
+    "model": "openrouter/liquid/lfm-2.5-2.6b:free",
+    "status": "reply",
+    "ms": 741,
+    "reply": "",
+    "error": null
+  },
+  {
+    "model": "openrouter/cognitivecomputations/dolphin-mistral-24b-venice-edition:free",
+    "status": "fail",
+    "ms": 35,
+    "reply": null,
+    "error": "This model is unavailable for free. The paid version is available now - use this slug instead: cognitivecomputations/dol"
+  }
+]

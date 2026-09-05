@@ -1,0 +1,149 @@
+[
+  {
+    "model": "openrouter/free",
+    "status": "reply",
+    "ms": 1346,
+    "reply": "",
+    "error": null
+  },
+  {
+    "model": "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free",
+    "status": "ok",
+    "ms": 16172,
+    "reply": "The user wants me to reply with exactly \"OK\". This is a simp",
+    "error": null
+  },
+  {
+    "model": "openrouter/nvidia/nemotron-3-super-120b-a12b:free",
+    "status": "ok",
+    "ms": 648,
+    "reply": "User says: \"Reply with exactly: OK\". They want the assistant",
+    "error": null
+  },
+  {
+    "model": "openrouter/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+    "status": "ok",
+    "ms": 580,
+    "reply": "OK",
+    "error": null
+  },
+  {
+    "model": "openrouter/google/gemma-4-31b-it:free",
+    "status": "fail",
+    "ms": 1373,
+    "reply": null,
+    "error": "Provider returned error"
+  },
+  {
+    "model": "openrouter/google/gemma-4-26b-a4b-it:free",
+    "status": "fail",
+    "ms": 1252,
+    "reply": null,
+    "error": "Provider returned error"
+  },
+  {
+    "model": "openrouter/openai/gpt-oss-120b:free",
+    "status": "fail",
+    "ms": 33,
+    "reply": null,
+    "error": "This model is unavailable for free. The paid version is available now - use this slug instead: openai/gpt-oss-120b"
+  },
+  {
+    "model": "openrouter/openai/gpt-oss-20b:free",
+    "status": "fail",
+    "ms": 46,
+    "reply": null,
+    "error": "This model is unavailable for free. The paid version is available now - use this slug instead: openai/gpt-oss-20b"
+  },
+  {
+    "model": "openrouter/poolside/laguna-m.1:free",
+    "status": "fail",
+    "ms": 52,
+    "reply": null,
+    "error": "No endpoints found for poolside/laguna-m.1:free."
+  },
+  {
+    "model": "openrouter/poolside/laguna-xs.2:free",
+    "status": "fail",
+    "ms": 40,
+    "reply": null,
+    "error": "No endpoints found for poolside/laguna-xs.2:free."
+  },
+  {
+    "model": "openrouter/qwen/qwen3-coder:free",
+    "status": "fail",
+    "ms": 28,
+    "reply": null,
+    "error": "This model is unavailable for free. The paid version is available now - use this slug instead: qwen/qwen3-coder"
+  },
+  {
+    "model": "openrouter/moonshotai/kimi-k2.6:free",
+    "status": "fail",
+    "ms": 35,
+    "reply": null,
+    "error": "This model is unavailable for free. The paid version is available now - use this slug instead: moonshotai/kimi-k2.6"
+  },
+  {
+    "model": "openrouter/cohere/north-mini-code:free",
+    "status": "reply",
+    "ms": 1111,
+    "reply": "",
+    "error": null
+  },
+  {
+    "model": "openrouter/minimax/minimax-m2.7:free",
+    "status": "reply",
+    "ms": 1871,
+    "reply": "",
+    "error": null
+  },
+  {
+    "model": "openrouter/meta-llama/llama-3.3-70b-instruct:free",
+    "status": "fail",
+    "ms": 41,
+    "reply": null,
+    "error": "This model is unavailable for free. The paid version is available now - use this slug instead: meta-llama/llama-3.3-70b-"
+  },
+  {
+    "model": "openrouter/anthropic/claude-fable-5.1",
+    "status": "ok",
+    "ms": 3965,
+    "reply": "OK",
+    "error": null
+  },
+  {
+    "model": "openrouter/anthropic/claude-sonnet-5",
+    "status": "ok",
+    "ms": 2577,
+    "reply": "OK",
+    "error": null
+  },
+  {
+    "model": "openrouter/openai/gpt-6-astra",
+    "status": "ok",
+    "ms": 4033,
+    "reply": "OK",
+    "error": null
+  },
+  {
+    "model": "openrouter/openai/gpt-5.6-sol",
+    "status": "ok",
+    "ms": 1436,
+    "reply": "OK",
+    "error": null
+  },
+  {
+    "model": "openrouter/google/gemini-3.8-flash",
+    "status": "reply",
+    "ms": 3079,
+    "reply": "",
+    "error": null
+  },
+  {
+    "model": "openrouter/x-ai/grok-4.6",
+    "status": "ok",
+    "ms": 2772,
+    "reply": "OK",
+    "error": null
+  }
+]

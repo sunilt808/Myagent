@@ -1,6 +1,6 @@
 {
   "name": "myagent",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "A terminal AI coding agent with manual model selection, similar to OpenCode CLI",
   "main": "index.js",
   "bin": {

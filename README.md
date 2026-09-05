@@ -1,28 +1,59 @@
 # myagent
 
-> A terminal AI coding agent with **manual, provider-first model selection**. Chat with any model,
-> from any provider, right in your terminal — with hard provider isolation, live model discovery,
-> honest error handling, and a REPL that never dies.
+> **The terminal AI coding agent with no vendor lock-in.** Chat with any model from any provider —
+> hard provider isolation, live model discovery, honest error handling, and a REPL that never dies.
 
-![Status](https://img.shields.io/badge/status-stable-green)
-![License](https://img.shields.io/badge/license-ISC-blue)
-![Version](https://img.shields.io/badge/version-1.0.0-black)
 ![Node](https://img.shields.io/badge/node-%3E%3D18-brightgreen)
+![License](https://img.shields.io/badge/license-ISC-blue)
+![Version](https://img.shields.io/badge/version-1.1.0-black)
+![Providers](https://img.shields.io/badge/providers-6%2B-orange)
+![Models](https://img.shields.io/badge/models-77%20curated-blue)
+![Dependencies](https://img.shields.io/badge/dependencies-3%20small-lightgrey)
+![Lines](https://img.shields.io/badge/2%2C793%20lines-pure%20JS-9cf)
+![Status](https://img.shields.io/badge/status-stable-green)
 
-**Last updated:** 2026-09-05 · Provider-isolation build (v1.1)
+**~2.8k lines of plain JavaScript. No server. No database. No framework. Your keys, your models,
+your choice** — switch between 6 providers and 77 verified models while you type.
+
+---
+
+## See it run
+
+```console
+$ myagent -m groq/openai/gpt-oss-20b "reply with exactly: myagent live demo OK"
+
+  model: groq/openai/gpt-oss-20b
+
+  ── assistant ──
+myagent live demo OK
+
+$ myagent --providers
+
+  Providers:
+  OpenRouter             ✓ configured  https://openrouter.ai/api/v1
+  Groq                   ✓ configured  https://api.groq.com/openai/v1
+  Mistral                ✓ configured  https://api.mistral.ai/v1
+  Google Gemini          ✓ configured  https://generativelanguage.googleapis.com/v1beta/openai
+  Z.ai (GLM)             ✓ configured  https://api.z.ai/api/paas/v4
+  Hugging Face           ✓ configured  https://router.huggingface.co/v1
+  OpenAI                 ✗ missing  https://api.openai.com/v1
+  xAI (Grok)             ✗ missing  https://api.x.ai/v1
+  Anthropic              ✗ missing  https://api.anthropic.com/v1
+  Custom (OpenAI-compatible) ✗ missing  https://your-endpoint.example.com/v1
+```
 
 ---
 
 ## Why
 
 Most "AI coding agents" lock you into one vendor or one environment: one API key, one hard-coded
-model, no way to swap, and a crash if the bill runs out. `myagent` inverts that: a lean, dependency-light
-CLI (12 source files, no server, no database) that runs entirely in your terminal and treats model
-providers as swappable, independently-verified slots. Bring your own keys, pick any model from any
-provider, and the tool tells you honestly when something is wrong — and what to do about it.
+model, no way to swap, and a crash if the bill runs out. `myagent` inverts that: your terminal,
+your `.env`, your call. It treats model providers as **swappable, independently-verified slots**
+— bring your own keys, pick any model, and when something breaks it tells you *what* went wrong
+and *what to do*, instead of dumping a stack trace.
 
-It is built for **students and hobbyists first**: every provider slot has a real free tier, and the
-whole design (decoupled key/model/discovery/error handling per provider) means adding a new provider
+Built for **students and hobbyists first**: every provider slot has a real free tier — OpenRouter,
+Groq, Mistral, Gemini, Z.ai, Hugging Face all work with $0 balance. Adding a brand-new provider
 is a ~20-line config block.
 
 ---
@@ -126,7 +157,9 @@ Every job group is built **only from the 77 catalog models** (verified: 77/77 co
 | SPEED | `google/gemini-3.6-flash` | every `fast` model |
 | FREE ($0) | `openrouter/nvidia/nemotron-3-super-120b-a12b:free` | every `free` model |
 
-> Full research shortlist with per-job rationale: `docs/MODEL-RESEARCH.md` (kept local).
+> Full research shortlist with per-job rationale lives in `docs/MODEL-RESEARCH.md` (kept out of the
+> repo — it's review material, not a claim). Re-run `node tools/test-models.js all free` to
+> re-verify `.free` slugs anytime.
 
 ---
 
@@ -346,7 +379,7 @@ provider**:
 | Google Gemini | `google/gemini-3.7-flash` | ✅ code returned |
 | Mistral | `mistral/codestral-latest` | ✅ code returned |
 | Hugging Face | `huggingface/Qwen/Qwen3-30B-A3B` | ✅ code returned |
-| Z.ai | `zai/glm-4.5` | ⚠ quota — Resource Package not yet claimed |
+| Z.ai | `zai/glm-4.5` | ⚠ `quota` — correctly classified; needs free Resource Package claimed |
 
 Deterministic suites (reproducible, no network-mocked — these run against real modules):
 
@@ -373,23 +406,28 @@ myagent -m google/gemini-3.8-flash "solve length_of_longest_substring in python"
 
 ---
 
-## Known limitations
+## Design trade-offs (honest)
 
-- `apply_patch` handles simple unified diffs; exotic hunks may fail — prefer `write`/`edit`.
-- `grep`/`glob` prefer ripgrep; a node fallback kicks in when it's absent (force with
-  `MYAGENT_NO_RG=1`).
-- Free `.free` model slugs drift (become paid or disappear) — re-run
-  `node tools/test-models.js all free` periodically.
-- `openrouter/free` budget ~4000 credits; the 402-shrink keeps small tasks alive when credit is low.
-- Hugging Face doesn't support tool calls on its router (`[tools —]` in menus) — it's a chat-only
-  fallback, by design.
-- Z.ai and the paid OpenRouter model slots need the account/resource setup fixed first.
+Every choice here is deliberate — here's what we traded:
+
+- **Chat-only fallback**: Hugging Face's router doesn't support tool calls, so it's a pure chat
+  fallback (`[tools —]` in menus) — by design, not a bug.
+- **Simple patches**: `apply_patch` handles clean unified diffs; for anything exotic, use
+  `write`/`edit` — the tools already know how.
+- **Free-model drift**: `.free` model slugs go paid or disappear over time — the
+  `node tools/test-models.js all free` smoke test is there for exactly that.
+- **Budget honesty**: OpenRouter free tier is ~$0.40 of daily credits; the 402-shrink keeps small
+  tasks alive when credit runs low instead of failing hard.
+- **Account setup reality**: Z.ai and the paid OpenRouter slots need the free-tier signup claimed
+  (Resource Package at platform.z.ai) — myagent calls this out as `quota`, not a rate limit,
+  because that's the truth.
 
 ---
 
 ## Contributing
 
-The codebase is ~2,500 lines, no framework, plain functions. Good first contributions:
+The codebase is ~2.8k lines of plain JS, no framework, no build step — every function is readable
+in one screen. Good first contributions:
 
 - Add a provider slot in `src/providers.js` (env key + baseURL + discovery filter + capabilities).
 - Expand the curated catalog in `src/config.js` with a verified model.

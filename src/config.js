@@ -109,24 +109,6 @@ const DEFAULT_PROVIDERS = {
       "claude-opus-5": { name: "Claude Opus 5", category: "reasoning" },
       "claude-sonnet-4": { name: "Claude Sonnet 4", category: "general" }
     }
-  },
-  freellmapi: {
-    label: "FreeLLMAPI",
-    // FreeLLMAPI is a self-hosted, OpenAI-compatible router. Default endpoint is
-    // the local install; override with FREELLMAPI_BASE_URL (e.g. a remote instance).
-    baseURL: process.env.FREELLMAPI_BASE_URL || "http://localhost:3001/v1",
-    apiKey: () => process.env.FREELLMAPI_API_KEY,
-    // The router exposes its full model list dynamically at <baseURL>/models.
-    // Static entries below are routing strategies that always work regardless of
-    // which upstream free-tier keys are configured; use tools/freellmapi-models.js
-    // to pull the live list (cached into ~/.myagent/freellmapi-models.json).
-    dynamicModels: true,
-    models: {
-      "auto": { name: "Auto (router picks best)", category: "general" },
-      "auto:fast": { name: "Auto Fast (speed bias)", category: "fast" },
-      "auto:smart": { name: "Auto Smart (capability bias)", category: "reasoning" },
-      "fusion": { name: "Fusion (multi-model ensemble)", category: "reasoning" }
-    }
   }
 };
 

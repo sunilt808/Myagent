@@ -59,9 +59,11 @@ function newSessionId() {
 
 function printHelp() {
   ui.log(ui.dim("  Commands:"));
-  ui.log(ui.dim("    /models             list and pick a model (interactive)"));
-  ui.log(ui.dim("    /model <id>         switch model, e.g. /model openrouter/nvidia/nemotron-3-super-120b-a12b:free"));
-  ui.log(ui.dim("    /model              show current model"));
+  ui.log(ui.dim("    /models             open the numbered model menu"));
+  ui.log(ui.dim("    /model <name>       filter + pick, e.g. /model gemma  (>1 match shows menu)"));
+  ui.log(ui.dim("                        /model gpt-4o  switches directly"));
+  ui.log(ui.dim("                        /model         opens the full menu"));
+  ui.log(ui.dim("                        Tab completes a partial provider/model id"));
   ui.log(ui.dim("    /permissions        show/edit tool permissions"));
   ui.log(ui.dim("    /config             open the config file (creates defaults first)"));
   ui.log(ui.dim("    /clear              clear conversation history"));
@@ -75,37 +77,64 @@ function printHelp() {
   ui.log(ui.dim("  Tip: end a line with \\ to continue on the next line (multiline prompts)."));
 }
 
-function recursivePick(rl, modelList) {
+// Case-insensitive substring match across id, name, and raw model id.
+function findMatchingModels(modelList, term) {
+  const t = String(term || "").trim().toLowerCase();
+  if (!t) return [];
+  return modelList.filter(
+    (m) =>
+      m.id.toLowerCase().includes(t) ||
+      (m.name || "").toLowerCase().includes(t) ||
+      String(m.model).toLowerCase().includes(t)
+  );
+}
+
+// Numbered model menu. Optionally filters to `filterText` matches first.
+// Works everywhere (CLI, pipe, scripts) — no arrow keys required.
+function modelMenu(rl, modelList, currentId, filterText) {
   return new Promise((resolve) => {
-    ui.log("");
+    let list = modelList;
+    if (filterText) {
+      list = findMatchingModels(modelList, filterText);
+    }
+    if (list.length === 1) return resolve(list[0]);
+    if (list.length === 0) {
+      ui.log(ui.red(`  No models match "${filterText}".`));
+      return resolve(null);
+    }
+
     const providerGroups = {};
-    for (const m of modelList) {
+    for (const m of list) {
       if (!providerGroups[m.provider]) providerGroups[m.provider] = [];
       providerGroups[m.provider].push(m);
     }
     const flat = [];
+    ui.log("");
+    ui.log(
+      ui.cyan(ui.bold(`  Select a model${filterText ? ` (filter: ${filterText})` : ""} — number, or id/name; 0 = cancel`))
+    );
     for (const [pkey, models] of Object.entries(providerGroups)) {
       ui.log(ui.yellow(ui.bold(`  ${pkey.toUpperCase()}`)));
       for (const m of models) {
         const idx = flat.length;
         flat.push(m);
         const freeTag = m.category === "free" || /:free$/.test(m.model) ? ui.green(" [free]") : "";
-        ui.log(`    ${String(idx + 1).padStart(2)}. ${ui.cyan(m.name)}${freeTag}  ${ui.gray(m.id)}`);
+        const curTag = m.id === currentId ? ui.dim("  ◀ current") : "";
+        ui.log(`    ${String(idx + 1).padStart(2)}. ${ui.cyan(m.name)}${freeTag}  ${ui.gray(m.id)}${curTag}`);
       }
     }
     ui.log("");
-    rl.setPrompt(ui.dim("  Pick a number (or id/name, 0 = cancel) > "));
-    rl.prompt();
-    rl.once("line", (line) => {
-      const answer = line.trim().toLowerCase();
+    rl.question(ui.dim("  Pick a number (or id/name, 0 = cancel) > "), (line) => {
+      const answer = line.trim();
+      const low = answer.toLowerCase();
       if (!answer || answer === "0") return resolve(null);
       const asNum = parseInt(answer, 10);
-      if (!isNaN(asNum) && asNum >= 1 && asNum <= flat.length) {
-        return resolve(flat[asNum - 1]);
-      }
-      const hit = modelList.find((m) => m.id.toLowerCase() === answer || m.name.toLowerCase() === answer || m.model.toLowerCase() === answer);
-      if (hit) return resolve(hit);
-      ui.log(ui.red("  No model matched."));
+      if (!isNaN(asNum) && asNum >= 1 && asNum <= flat.length) return resolve(flat[asNum - 1]);
+      const exact = list.find((m) => m.id.toLowerCase() === low || (m.name || "").toLowerCase() === low || m.model.toLowerCase() === low);
+      if (exact) return resolve(exact);
+      const partial = findMatchingModels(list, low);
+      if (partial.length === 1) return resolve(partial[0]);
+      ui.log(ui.red(`  No model matched "${answer}".`));
       resolve(null);
     });
   });
@@ -138,29 +167,48 @@ async function handleCommand(rl, line, state) {
       break;
     case "models":
     case "model":
-      if (!arg) {
-        const current = state.model;
-        ui.log("");
-        ui.log(ui.bold("  Current model: ") + ui.cyan(current.id));
-        if (cmd === "models") {
-          const picked = await recursivePick(rl, listModels(config));
+      {
+        const models = listModels(config);
+        if (!arg) {
+          ui.log("");
+          ui.log(ui.bold("  Current model: ") + ui.cyan(state.model.id));
+          const picked = await modelMenu(rl, models, state.model.id, "");
           if (!picked) return true;
           state.model = picked;
           ui.log(ui.green(`  → Model set to ${picked.id}`));
+          return true;
         }
-      } else {
-        const config2 = loadConfig();
-        let found = getModelById(config2, arg);
-        if (!found) {
-          if (!String(arg).includes("/")) {
-            ui.log(ui.red(`  Unknown model: ${arg}. Use provider/model, e.g. openrouter/openai/gpt-4o.`));
-            return true;
-          }
-          found = resolveModel(config2, arg);
-          ui.log(ui.yellow(`  ${arg} is not in the catalog — will use it as a raw id.`));
+        // Exact catalog id, or a bare model name (e.g. "gpt-4o", "gemma").
+        let found = getModelById(config, arg);
+        if (found) {
+          state.model = found;
+          ui.log(ui.green(`  → Model set to ${found.id}`));
+          return true;
         }
-        state.model = found;
-        ui.log(ui.green(`  → Model set to ${found.id}`));
+        // Partial / fuzzy match: unique result applies directly, otherwise prompt.
+        const matches = findMatchingModels(models, arg);
+        if (matches.length === 1) {
+          state.model = matches[0];
+          ui.log(ui.yellow(`  ${arg} matched ${ui.bold(matches[0].id)} — set.`));
+          ui.log(ui.green(`  → Model set to ${matches[0].id}`));
+          return true;
+        }
+        if (matches.length > 1) {
+          const picked = await modelMenu(rl, models, state.model.id, arg);
+          if (!picked) return true;
+          state.model = picked;
+          ui.log(ui.green(`  → Model set to ${picked.id}`));
+          return true;
+        }
+        // No catalog match: allow raw/provider-prefixed ids (e.g. a brand-new model).
+        if (String(arg).includes("/")) {
+          found = resolveModel(config, arg);
+          ui.log(ui.yellow(`  ${arg} is not in the catalog — using it as a raw id.`));
+          state.model = found;
+          ui.log(ui.green(`  → Model set to ${found.id}`));
+          return true;
+        }
+        ui.log(ui.red(`  Unknown model: ${arg}. Try /model <partial name> (e.g. /model gemma) or /model to browse.`));
       }
       return true;
     case "permissions":
@@ -255,12 +303,21 @@ async function repl({ initialModel, cwd, verbose, noBanner }) {
     history: []
   };
   ui.log(ui.dim(`  model: ${state.model.id}  (${ui.cyan(state.model.name)})`));
-  ui.log(ui.dim("  type /help for commands. End a line with \\ to continue multiline."));
+  ui.log(ui.dim("  type /help for commands · /model or /models opens the model menu · Tab completes model ids · end a line with \\ for multiline"));
 
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
-    terminal: true
+    terminal: true,
+    completer: (line) => {
+      // Tab-complete /model and /models with catalog ids and provider prefixes.
+      const m = line.match(/^\/models?\s+(\S*)$/i);
+      if (!m) return [[], line];
+      const prefix = m[1].toLowerCase();
+      const ids = listModels(loadConfig()).map((x) => `${x.provider}/${x.model}`);
+      const hits = [...new Set(ids)].filter((id) => id.toLowerCase().startsWith(prefix)).slice(0, 40);
+      return [hits, prefix];
+    }
   });
 
   const MAX_SAVE = 20;
@@ -364,4 +421,4 @@ function autoSave(state) {
   saveSession(s.id, s);
 }
 
-module.exports = { repl, listSessions, loadSession, saveSession, newSessionId, BANNER };
+module.exports = { repl, listSessions, loadSession, saveSession, newSessionId, BANNER, modelMenu, findMatchingModels };

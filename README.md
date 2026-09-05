@@ -1,7 +1,8 @@
 # myagent  [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/sunilt808/Myagent)
 
-> **The terminal AI coding agent with no vendor lock-in.** Chat with any model from any provider —
-> hard provider isolation, live model discovery, honest error handling, and a REPL that never dies.
+> **Multi-provider AI coding agent** — a unified terminal interface for 6+ LLM providers with
+> provider-isolated credentials, live model discovery, and explicit provider/model selection.
+> No vendor lock-in. No silent cross-provider fallback. A REPL that never dies.
 
 ![Node](https://img.shields.io/badge/node-%3E%3D18-brightgreen)
 ![License](https://img.shields.io/badge/license-ISC-blue)
@@ -11,6 +12,15 @@
 ![Dependencies](https://img.shields.io/badge/dependencies-3%20small-lightgrey)
 ![Lines](https://img.shields.io/badge/2%2C793%20lines-pure%20JS-9cf)
 ![Status](https://img.shields.io/badge/status-stable-green)
+
+## Highlights
+
+- **Multi-provider AI coding agent** — unified terminal interface for multiple LLM providers with
+  provider-isolated credentials, model discovery, and selection.
+- **Provider-aware model routing** — live model discovery, per-provider caching, explicit
+  provider/model switching, and bounded retry/error recovery *without* silent cross-provider fallback.
+- **Agentic developer tools** — integrated file search/read/edit, patching, and terminal execution
+  with permission controls and persistent sessions.
 
 **~2.8k lines of plain JavaScript. No server. No database. No framework. Your keys, your models,
 your choice** — switch between 6 providers and 77 verified models while you type.
@@ -50,7 +60,8 @@ Most "AI coding agents" lock you into one vendor or one environment: one API key
 model, no way to swap, and a crash if the bill runs out. `myagent` inverts that: your terminal,
 your `.env`, your call. It treats model providers as **swappable, independently-verified slots**
 — bring your own keys, pick any model, and when something breaks it tells you *what* went wrong
-and *what to do*, instead of dumping a stack trace.
+and *what to do*, instead of dumping a stack trace. Provider failures never silently jump to
+another provider — you stay in control and choose the recovery path.
 
 Built for **students and hobbyists first**: every provider slot has a real free tier — OpenRouter,
 Groq, Mistral, Gemini, Z.ai, Hugging Face all work with $0 balance. Adding a brand-new provider
@@ -265,6 +276,18 @@ continues. Common safe bash commands (`git status`, `ls`, `cd`, `node -v`…) by
 ---
 
 ## Architecture
+
+Four clean layers, ~2.8k lines of plain JS:
+
+1. **Unified terminal interface** — one REPL and one CLI surface over every provider; numbered
+   menus, per-job model picker, session auto-save.
+2. **Provider-aware routing layer** — model resolution splits on the first `/` (`groq/…`,
+   `zai/glm-4.5`), with live `/models` discovery cached per provider and explicit switching only.
+3. **Resilience core** — centralized error classification with fix hints, bounded backoff honoring
+   `Retry-After`, 402-aware output-budget shrink, and a recovery menu (`[R]/[M]/[P]/[X]`) instead
+   of crashes. No cross-provider fallback, ever.
+4. **Agentic tool layer** — file search, read/edit/patches, and terminal execution gated by
+   allow/ask/deny permissions with persistent sessions.
 
 ### Overview
 

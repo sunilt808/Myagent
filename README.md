@@ -29,28 +29,25 @@ your choice** — switch between 6 providers and 77 verified models while you ty
 
 ## See it run
 
-```console
-$ myagent -m groq/openai/gpt-oss-20b "reply with exactly: myagent live demo OK"
+### Startup
 
-  model: groq/openai/gpt-oss-20b
+![Startup](screenshots/shot1start.png)
 
-  ── assistant ──
-myagent live demo OK
+### Task 1
 
-$ myagent --providers
+![Task 1](screenshots/shot2-task1.png)
 
-  Providers:
-  OpenRouter             ✓ configured  https://openrouter.ai/api/v1
-  Groq                   ✓ configured  https://api.groq.com/openai/v1
-  Mistral                ✓ configured  https://api.mistral.ai/v1
-  Google Gemini          ✓ configured  https://generativelanguage.googleapis.com/v1beta/openai
-  Z.ai (GLM)             ✓ configured  https://api.z.ai/api/paas/v4
-  Hugging Face           ✓ configured  https://router.huggingface.co/v1
-  OpenAI                 ✗ missing  https://api.openai.com/v1
-  xAI (Grok)             ✗ missing  https://api.x.ai/v1
-  Anthropic              ✗ missing  https://api.anthropic.com/v1
-  Custom (OpenAI-compatible) ✗ missing  https://your-endpoint.example.com/v1
-```
+### Task 2
+
+![Task 2](screenshots/shot3-task2.png)
+
+### Task 3
+
+![Task 3](screenshots/shot4-task3.png)
+
+### Quit
+
+![Quit](screenshots/shot5-quit.png)
 
 ---
 

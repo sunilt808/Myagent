@@ -34,6 +34,93 @@ myagent -m openrouter/free "hi"    # one-shot with a specific model
 | `--cwd <dir>` | Work in a different folder |
 | `-v, --verbose` | Extra logging |
 | `--no-color` | Turn off ANSI colors |
+| `--help` | Show CLI help and exit |
+
+---
+
+## 2b. Complete command reference — from start to quit
+
+### Phase 0 — Install / setup (once)
+
+| Command | What it does |
+|---------|--------------|
+| `npm link` (or `npm install -g .`) | Make `myagent` runnable from any folder |
+| `notepad .env` | Add API keys (`GROQ_API_KEY=...`, `MISTRAL_API_KEY=...`, ...) |
+| `myagent --config-path` | Find where the config file lives |
+
+### Phase 1 — Start the app
+
+| Command | What it does |
+|---------|--------------|
+| `myagent` | Start interactive chat (REPL) in the current folder |
+| `myagent "question"` | One-shot: ask once, print the answer, exit |
+| `myagent -m <id> "question"` | One-shot with a specific model |
+| `myagent -m <id>` | Opens REPL already switched to that model |
+| `myagent -s <session-id>` | One-shot resuming a saved session |
+| `myagent --cwd <dir>` | Start in a different working folder |
+
+### Phase 2 — Inspect before you chat
+
+| Command | What it does |
+|---------|--------------|
+| `myagent --providers` | Show each provider + whether its key is set |
+| `myagent --list-models` | Print every model id in the catalog |
+| `myagent -v` | Start with verbose logging (see every tool call) |
+
+### Phase 3 — Inside the REPL: commands the bot understands
+
+**Model / provider control**
+
+| Command | What it does |
+|---------|--------------|
+| `/model` | Provider-first: pick provider, then model |
+| `/model <id>` | Direct switch (`/model gpt-4o`, `/model groq/gpt-oss-20b`) |
+| `/model gemma` | Filter — 1 match switches instantly, many → short menu |
+| `/models` | Flat numbered menu across all providers |
+| `/provider` | Pick provider, then a model from it |
+| `/provider groq` | Go straight to Groq's model picker |
+| `/providers` | Show provider config status (✓ / ✗ + base URL) |
+| `Tab` | Complete a partial `/model` or `/provider` id while typing |
+| `0` or empty Enter | Cancel any menu |
+
+**Conversation control**
+
+| Command | What it does |
+|---------|--------------|
+| `/clear` | Wipe conversation history (start fresh, save tokens!) |
+| `/undo` | Remove the last assistant turn |
+| `\` at end of a line | Continue typing on the next line (multiline prompt) |
+| `/save <name>` | Save the current conversation under a name |
+| `/sessions` | List saved sessions |
+| `/load <id>` | Resume a past session (revalidates its provider key) |
+
+**Tools & settings**
+
+| Command | What it does |
+|---------|--------------|
+| `/permissions` | Show tool permissions (allow / ask / deny) |
+| `/config` | Open the config file in your editor |
+| `/help` (alias `/?`) | Show the in-app command list |
+
+### Phase 4 — Deal with failures (REPL never dies)
+
+| Key | What it does |
+|-----|--------------|
+| `[R]` | Try the same request again (your prompt is preserved) |
+| `[M]` | Pick another model from the same provider |
+| `[P]` | Pick another provider, then a model from it |
+| `[X]` | Exit the REPL |
+
+### Phase 5 — Quit / cleanup
+
+| Command | What it does |
+|---------|--------------|
+| `/exit` | Leave the REPL |
+| `/quit` | Same as `/exit` |
+| `Ctrl+C` | Interrupt / quit (safe) |
+
+- Auto-save: conversations are saved to `~/.myagent/sessions/` automatically after every turn —
+  quit any time, `/load` to resume later.
 
 ---
 
@@ -53,19 +140,23 @@ Start `myagent`, type `/models` or `/model`:
 
 Other REPL commands:
 
-| Command | What it does |
-|---------|--------------|
-| `/model` | Open model menu / show current |
-| `/provider` | Pick a provider, then a model from it |
-| `/permissions` | Show tool permissions (allow/ask/deny) |
-| `/config` | Open config file in editor |
-| `/clear` | Reset conversation history |
-| `/sessions` | List saved sessions |
-| `/load <id>` | Resume a saved session |
-| `/save <name>` | Save current conversation |
-| `/undo` | Remove last assistant turn |
-| `/help` | Show all commands |
-| `/exit` or `/quit` | Quit |
+| Command | Aliases | What it does |
+|---------|---------|--------------|
+| `/models` | — | Flat numbered model menu (all providers, backward compatible) |
+| `/model` | — | Provider-first flow: pick provider, then a model from it |
+| `/model <id>` | — | Direct switch, e.g. `/model gpt-4o`, `/model groq/gpt-oss-20b` |
+| `/provider` | — | Pick a provider, then a model from it |
+| `/provider <id>` | — | Open that provider's model picker, e.g. `/provider groq` |
+| `/providers` | — | Show provider config status (✓ configured / ✗ missing + base URL) |
+| `/permissions` | — | Show tool permissions (allow/ask/deny) |
+| `/config` | — | Open config file in editor |
+| `/clear` | — | Reset conversation history |
+| `/undo` | — | Remove last assistant turn |
+| `/sessions` | — | List saved sessions |
+| `/load <id>` | — | Resume a saved session |
+| `/save <name>` | — | Save current conversation |
+| `/help` | `/?` | Show all commands + tips |
+| `/exit` | `/quit`, Ctrl+C | Quit |
 
 Tip: end a line with `\` to continue typing on the next line (multiline input).
 

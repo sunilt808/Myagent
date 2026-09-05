@@ -67,6 +67,7 @@ function printHelp() {
   ui.log(ui.dim("                        Tab completes a partial provider/model id"));
   ui.log(ui.dim("    /provider           pick a provider, then a model from it"));
   ui.log(ui.dim("    /provider <id>      open that provider's model picker, e.g. /provider groq"));
+  ui.log(ui.dim("    /providers          show provider config status (✓ configured / ✗ missing)"));
   ui.log(ui.dim("    /permissions        show/edit tool permissions"));
   ui.log(ui.dim("    /config             open the config file (creates defaults first)"));
   ui.log(ui.dim("    /clear              clear conversation history"));
@@ -221,6 +222,23 @@ async function handleCommand(rl, line, state) {
         ui.log(ui.green(`  → Model set to ${picked.id}`));
         return true;
       }
+    case "providers":
+      {
+        ui.log("");
+        const desired = ["openrouter", "groq", "mistral", "google", "zai", "huggingface", "openai", "xai", "anthropic", "custom"];
+        const keys = Object.keys(config.provider);
+        keys.sort((a, b) => desired.indexOf(a) - desired.indexOf(b) || a.localeCompare(b));
+        for (const pkey of keys) {
+          const slot = getSlot(pkey);
+          const label = slot?.label || pkey;
+          const status = isConfigured(pkey) ? ui.green("✓ configured") : ui.yellow("✗ missing");
+          const base = config.provider[pkey]?.baseURL ? ui.gray(config.provider[pkey].baseURL) : "";
+          ui.log(`  ${ui.cyan(label.padEnd(22))} ${status}  ${base}`);
+        }
+        ui.log("");
+        ui.log(ui.dim("  type /provider to pick a provider, /model to switch models"));
+      }
+      return true;
     case "provider":
       {
         if (!arg) {
@@ -403,7 +421,7 @@ async function repl({ initialModel, cwd, verbose, noBanner }) {
     terminal: true,
     completer: (line) => {
       // Tab-complete /model and /models with catalog ids and provider prefixes.
-      const m = line.match(/^\/(models?|provider)\s+(\S*)$/i);
+      const m = line.match(/^\/(models?|providers?)\s+(\S*)$/i);
       if (!m) return [[], line];
       const cmdLower = m[1].toLowerCase();
       const prefix = m[2].toLowerCase();

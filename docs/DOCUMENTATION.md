@@ -373,6 +373,7 @@ The list is generated from `src/config.js`, so it always matches the catalog.
 /models             list and pick a model (interactive)
 /model <id>         switch model          /model (no arg) shows current
 /provider <id>      provider-first picker (no arg = choose provider, then model)
+/providers          show provider config status (✓ configured / ✗ missing)
 /permissions        view/edit tool permissions
 /config             open config file
 /clear              clear conversation history

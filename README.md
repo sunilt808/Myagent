@@ -268,7 +268,7 @@ continues. Common safe bash commands (`git status`, `ls`, `cd`, `node -v`…) by
 
 ### Overview
 
-```
+                                ```
             you
              │
              ↓
